@@ -1,0 +1,29 @@
+<svg width="960" height="300" viewBox="0 0 960 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Tischkicker Spielfeld</title>
+  <desc id="desc">Abstrakte Draufsicht eines Tischkicker-Felds mit Stangen, Torbereichen und Ball.</desc>
+  <rect width="960" height="300" rx="8" fill="#2F7D5A"/>
+  <rect x="26" y="24" width="908" height="252" rx="6" stroke="#F5F2E8" stroke-width="6"/>
+  <path d="M480 26V274" stroke="#F5F2E8" stroke-width="5" stroke-dasharray="12 12"/>
+  <circle cx="480" cy="150" r="54" stroke="#F5F2E8" stroke-width="5"/>
+  <rect x="26" y="92" width="82" height="116" stroke="#F5F2E8" stroke-width="5"/>
+  <rect x="852" y="92" width="82" height="116" stroke="#F5F2E8" stroke-width="5"/>
+  <g stroke="#26332C" stroke-width="10" stroke-linecap="round">
+    <path d="M164 18V282"/>
+    <path d="M308 18V282"/>
+    <path d="M652 18V282"/>
+    <path d="M796 18V282"/>
+  </g>
+  <g>
+    <rect x="144" y="82" width="40" height="18" rx="4" fill="#E9C46A"/>
+    <rect x="144" y="200" width="40" height="18" rx="4" fill="#E9C46A"/>
+    <rect x="288" y="62" width="40" height="18" rx="4" fill="#E9C46A"/>
+    <rect x="288" y="141" width="40" height="18" rx="4" fill="#E9C46A"/>
+    <rect x="288" y="220" width="40" height="18" rx="4" fill="#E9C46A"/>
+    <rect x="632" y="62" width="40" height="18" rx="4" fill="#E76F51"/>
+    <rect x="632" y="141" width="40" height="18" rx="4" fill="#E76F51"/>
+    <rect x="632" y="220" width="40" height="18" rx="4" fill="#E76F51"/>
+    <rect x="776" y="82" width="40" height="18" rx="4" fill="#E76F51"/>
+    <rect x="776" y="200" width="40" height="18" rx="4" fill="#E76F51"/>
+  </g>
+  <circle cx="514" cy="132" r="13" fill="#F5F2E8" stroke="#26332C" stroke-width="4"/>
+</svg>
