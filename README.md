@@ -25,3 +25,12 @@ select public.set_group_code('dein-code');
 5. App neu starten.
 
 Die Supabase-Tabellen sind oeffentlich lesbar, Schreibzugriffe laufen ueber RPC-Funktionen und pruefen den Gruppen-Code serverseitig.
+
+## GitHub Pages
+
+Der GitHub-Pages-Workflow liest die Supabase-Konfiguration aus Repository Variables:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Nach Aenderungen an diesen Variables den Workflow `Deploy GitHub Pages` neu ausfuehren oder einen neuen Commit pushen.
