@@ -34,3 +34,16 @@ Der GitHub-Pages-Workflow liest die Supabase-Konfiguration aus Repository Variab
 - `VITE_SUPABASE_ANON_KEY`
 
 Nach Aenderungen an diesen Variables den Workflow `Deploy GitHub Pages` neu ausfuehren oder einen neuen Commit pushen.
+
+## Supabase Backups und Keepalive
+
+Die Workflows `Supabase Backup` und `Supabase Keepalive` brauchen diese Repository Secrets:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+
+Verwende dafuer die gleiche Supabase Project URL und den gleichen anon/public Key wie bei der App. Nicht den `service_role`-Key und nicht das Datenbank-Passwort verwenden.
+
+`Supabase Keepalive` fragt zweimal taeglich die harmlose Tabelle `keepalive` ab. Die Tabelle ist im aktuellen `supabase/schema.sql` enthalten; fuehre das Schema im Supabase SQL Editor erneut aus, wenn die Tabelle in deinem Projekt noch fehlt.
+
+`Supabase Backup` exportiert etwa alle drei Tage die oeffentlich per RLS lesbaren App-Tabellen `players`, `matches` und `match_slots` als JSON-Artefakt in GitHub Actions. Die Artefakte werden 90 Tage aufbewahrt und danach automatisch geloescht. `app_settings`, der Gruppen-Code-Hash und soft-geloeschte Matches werden nicht exportiert.
