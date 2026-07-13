@@ -40,6 +40,15 @@ create table if not exists public.app_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.keepalive (
+  id integer primary key,
+  status text not null
+);
+
+insert into public.keepalive (id, status)
+values (1, 'ok')
+on conflict (id) do update set status = excluded.status;
+
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
@@ -64,6 +73,7 @@ alter table public.players enable row level security;
 alter table public.matches enable row level security;
 alter table public.match_slots enable row level security;
 alter table public.app_settings enable row level security;
+alter table public.keepalive enable row level security;
 
 drop policy if exists "public_read_players" on public.players;
 create policy "public_read_players"
@@ -101,6 +111,13 @@ using (
       and match.is_deleted = false
   )
 );
+
+drop policy if exists "public_read_keepalive" on public.keepalive;
+create policy "public_read_keepalive"
+on public.keepalive
+for select
+to anon, authenticated
+using (true);
 
 create or replace function public.set_group_code(p_group_code text)
 returns void
@@ -365,7 +382,7 @@ end;
 $$;
 
 grant usage on schema public to anon, authenticated;
-grant select on public.players, public.matches, public.match_slots to anon, authenticated;
+grant select on public.players, public.matches, public.match_slots, public.keepalive to anon, authenticated;
 grant execute on function public.upsert_player(text, uuid, text, boolean) to anon, authenticated;
 grant execute on function public.submit_match(text, timestamptz, integer, integer, text, jsonb) to anon, authenticated;
 grant execute on function public.update_match(text, uuid, timestamptz, integer, integer, text, jsonb) to anon, authenticated;
