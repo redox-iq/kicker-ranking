@@ -1,4 +1,4 @@
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 create table if not exists public.players (
   id uuid primary key default gen_random_uuid(),
@@ -114,7 +114,7 @@ begin
   end if;
 
   insert into public.app_settings(key, value, updated_at)
-  values ('group_code_hash', crypt(p_group_code, gen_salt('bf')), now())
+  values ('group_code_hash', extensions.crypt(p_group_code, extensions.gen_salt('bf')), now())
   on conflict (key)
   do update set value = excluded.value, updated_at = now();
 end;
@@ -128,7 +128,7 @@ set search_path = public
 as $$
   select coalesce(
     (
-      select crypt(p_group_code, value) = value
+      select extensions.crypt(p_group_code, value) = value
       from public.app_settings
       where key = 'group_code_hash'
     ),
