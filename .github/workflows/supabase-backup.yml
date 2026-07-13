@@ -1,0 +1,37 @@
+name: Supabase Backup
+
+on:
+  schedule:
+    # Etwa alle drei Tage, Zeiten sind UTC.
+    - cron: "23 2 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Supabase-App-Daten exportieren
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: node scripts/supabase-public-backup.mjs
+
+      - name: Backup-Artefakt speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-public-backup-${{ github.run_id }}
+          path: backups/*.json
+          if-no-files-found: error
+          retention-days: 90
