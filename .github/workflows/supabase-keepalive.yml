@@ -16,11 +16,11 @@ jobs:
     steps:
       - name: Supabase-Datenbank abfragen
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "::error::Setze die Repository Secrets SUPABASE_URL und SUPABASE_ANON_KEY."
+            echo "::error::Setze SUPABASE_URL/SUPABASE_ANON_KEY oder VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY als Repository Secrets oder Variables."
             exit 1
           fi
 
