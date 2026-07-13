@@ -37,12 +37,17 @@ Nach Aenderungen an diesen Variables den Workflow `Deploy GitHub Pages` neu ausf
 
 ## Supabase Backups und Keepalive
 
-Die Workflows `Supabase Backup` und `Supabase Keepalive` brauchen diese Repository Secrets:
+Die Workflows `Supabase Backup` und `Supabase Keepalive` lesen die Supabase-Konfiguration aus diesen Repository Secrets oder Variables:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 
-Verwende dafuer die gleiche Supabase Project URL und den gleichen anon/public Key wie bei der App. Nicht den `service_role`-Key und nicht das Datenbank-Passwort verwenden.
+Alternativ verwenden sie automatisch die vorhandenen GitHub-Pages-Variables:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Verwende dafuer die Supabase Project URL und den anon/public Key. Nicht den `service_role`-Key und nicht das Datenbank-Passwort verwenden.
 
 `Supabase Keepalive` fragt zweimal taeglich die harmlose Tabelle `keepalive` ab. Die Tabelle ist im aktuellen `supabase/schema.sql` enthalten; fuehre das Schema im Supabase SQL Editor erneut aus, wenn die Tabelle in deinem Projekt noch fehlt.
 
