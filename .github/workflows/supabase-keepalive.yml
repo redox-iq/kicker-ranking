@@ -1,0 +1,30 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    # Zweimal taeglich, Zeiten sind UTC.
+    - cron: "17 7,19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Supabase-Datenbank abfragen
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Setze die Repository Secrets SUPABASE_URL und SUPABASE_ANON_KEY."
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            "$SUPABASE_URL/rest/v1/keepalive?select=id,status&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
