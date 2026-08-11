@@ -66,6 +66,7 @@ export default function App() {
   const [trustedDevice, setTrustedDevice] = useState(() => readTrustedDevice(window.localStorage));
   const [rememberDevice, setRememberDevice] = useState(repository.source === "supabase");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [headerScrolled, setHeaderScrolled] = useState(() => window.scrollY > 12);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -116,9 +117,16 @@ export default function App() {
     window.sessionStorage.setItem("kicker-group-code", groupCode);
   }, [groupCode]);
 
+  useEffect(() => {
+    const onScroll = () => setHeaderScrolled(window.scrollY > 12);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   const rankings = useMemo(() => calculateRankings(data.players, data.matches), [data]);
   const activePlayers = useMemo(() => data.players.filter((player) => player.active), [data.players]);
   const playersById = useMemo(() => new Map(data.players.map((player) => [player.id, player])), [data.players]);
+  const compactHeader = path !== "/" || headerScrolled;
 
   function navigate(nextPath: RoutePath) {
     const routeChanged = nextPath !== path;
@@ -192,14 +200,14 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <header className={compactHeader ? "topbar is-compact" : "topbar"}>
         <button className="icon-button menu-toggle" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label="Menü öffnen">
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
 
         <button className="brand" type="button" onClick={() => navigate("/")}>
           <span className="brand-mark">KR</span>
-          <span>
+          <span className="brand-copy">
             <strong>Kicker Ranking</strong>
             <small>Uni-Liga</small>
           </span>
@@ -222,12 +230,11 @@ export default function App() {
             {connectionStatus === "checking" ? "Prüfe…" : connectionStatus === "live" ? "Live" : "Offline"}
           </span>
           {trustedDevice ? (
-            <div className="trusted-device" title={`Dieses Gerät ist bis ${formatTrustedDeviceExpiry(trustedDevice.expiresAt)} freigeschaltet.`}>
+            <div className="trusted-device">
               <ShieldCheck size={16} />
-              <span>Gerät bis {formatTrustedDeviceExpiry(trustedDevice.expiresAt)}</span>
-              <button type="button" onClick={() => void forgetDevice()} disabled={busy} aria-label="Gerätefreigabe entfernen" title="Gerät vergessen">
-                <LogOut size={15} />
-              </button>
+              <span className="trusted-device-marquee">
+                <span className="trusted-device-label">Freigeschaltet bis {formatTrustedDeviceExpiry(trustedDevice.expiresAt)}</span>
+              </span>
             </div>
           ) : (
             <>
@@ -243,7 +250,12 @@ export default function App() {
               ) : null}
             </>
           )}
-          <button className="icon-button" type="button" onClick={() => void reload()} aria-label="Daten neu laden" disabled={loading || busy}>
+          {trustedDevice ? (
+            <button className="icon-button access-action logout-button" type="button" onClick={() => void forgetDevice()} disabled={busy} aria-label="Gerätefreigabe entfernen">
+              <LogOut size={18} />
+            </button>
+          ) : null}
+          <button className="icon-button access-action refresh-button" type="button" onClick={() => void reload()} aria-label="Daten neu laden" disabled={loading || busy}>
             <RefreshCw size={18} />
           </button>
         </div>
