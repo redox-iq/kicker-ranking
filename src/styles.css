@@ -213,6 +213,40 @@ button:disabled {
   accent-color: var(--green);
 }
 
+.match-access-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.match-access-copy {
+  display: inline-flex;
+  flex: 1 1 210px;
+  align-items: center;
+  gap: 10px;
+  color: var(--green-dark);
+}
+
+.match-access-copy > svg {
+  flex: 0 0 auto;
+}
+
+.match-access-copy span {
+  display: grid;
+  gap: 2px;
+}
+
+.match-access-copy small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.match-code-input {
+  flex: 1 1 220px;
+}
+
 .trusted-device {
   display: inline-flex;
   min-width: 0;
@@ -870,6 +904,15 @@ tbody tr:last-child td {
 
   .remember-device {
     font-size: 0.72rem;
+  }
+
+  .match-access-panel {
+    align-items: stretch;
+  }
+
+  .match-access-copy,
+  .match-code-input {
+    flex-basis: 100%;
   }
 
   .trusted-device {

@@ -282,6 +282,12 @@ export default function App() {
                 rankings={rankings}
                 playersById={playersById}
                 busy={busy}
+                groupCode={groupCode}
+                rememberDevice={rememberDevice}
+                showAccessPrompt={!trustedDevice}
+                supportsRememberDevice={repository.source === "supabase"}
+                onGroupCodeChange={setGroupCode}
+                onRememberDeviceChange={setRememberDevice}
                 onSave={(input) => mutate((credential) => repository.upsertMatch(input, credential))}
                 onDelete={(matchId) => mutate((credential) => repository.deleteMatch(matchId, credential))}
               />
@@ -372,6 +378,12 @@ function MatchesPage({
   rankings,
   playersById,
   busy,
+  groupCode,
+  rememberDevice,
+  showAccessPrompt,
+  supportsRememberDevice,
+  onGroupCodeChange,
+  onRememberDeviceChange,
   onSave,
   onDelete
 }: {
@@ -380,6 +392,12 @@ function MatchesPage({
   rankings: ReturnType<typeof calculateRankings>;
   playersById: Map<string, Player>;
   busy: boolean;
+  groupCode: string;
+  rememberDevice: boolean;
+  showAccessPrompt: boolean;
+  supportsRememberDevice: boolean;
+  onGroupCodeChange: (value: string) => void;
+  onRememberDeviceChange: (value: boolean) => void;
   onSave: (input: MatchInput) => Promise<boolean>;
   onDelete: (matchId: string) => Promise<boolean>;
 }) {
@@ -396,6 +414,27 @@ function MatchesPage({
   return (
     <div className="page-grid">
       <PageHeader icon={ListPlus} eyebrow="Spiele" title="Matches eintragen und Historie pflegen." />
+      {showAccessPrompt ? (
+        <section className="panel match-access-panel" aria-label="Gruppen-Code eingeben">
+          <div className="match-access-copy">
+            <KeyRound size={18} />
+            <span>
+              <strong>Gruppen-Code</strong>
+              <small>Zum Speichern direkt hier eingeben.</small>
+            </span>
+          </div>
+          <label className="code-input match-code-input">
+            <KeyRound size={16} />
+            <input value={groupCode} onChange={(event) => onGroupCodeChange(event.target.value)} type="password" placeholder="Gruppen-Code" aria-label="Gruppen-Code für Spiele" />
+          </label>
+          {supportsRememberDevice ? (
+            <label className="remember-device">
+              <input type="checkbox" checked={rememberDevice} onChange={(event) => onRememberDeviceChange(event.target.checked)} />
+              <span>30 Tage merken</span>
+            </label>
+          ) : null}
+        </section>
+      ) : null}
       <MatchForm key={editing?.id ?? "new-match"} players={players} editing={editing} busy={busy} onSave={onSave} onCancel={() => setEditing(null)} />
 
       <section className="panel">
