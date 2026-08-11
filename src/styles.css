@@ -197,7 +197,7 @@ button:disabled {
 }
 
 .match-access-panel {
-  display: flex;
+  display: none;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
@@ -886,6 +886,7 @@ tbody tr:last-child td {
   }
 
   .match-access-panel {
+    display: flex;
     align-items: stretch;
   }
 
