@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "npm run build:app && node scripts/build-sites-output.mjs",
     "build:app": "tsc --noEmit && vite build",
-    "build:github": "npm run build:app",
+    "build:github": "npm run build:app && node scripts/build-github-output.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:watch": "vitest"
