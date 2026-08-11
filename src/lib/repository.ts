@@ -8,6 +8,7 @@ export type DataSource = "supabase" | "local";
 
 export interface KickerRepository {
   source: DataSource;
+  checkConnection(): Promise<void>;
   load(): Promise<KickerData>;
   upsertPlayer(input: PlayerInput, groupCode: string): Promise<void>;
   upsertMatch(input: MatchInput, groupCode: string): Promise<void>;
@@ -29,6 +30,12 @@ function createSupabaseRepository(): KickerRepository {
 
   return {
     source: "supabase",
+    async checkConnection() {
+      const { error } = await supabase.from("players").select("id").limit(1);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
     async load() {
       const [playersResponse, matchesResponse, slotsResponse] = await Promise.all([
         supabase.from("players").select("*").order("display_name", { ascending: true }),
@@ -110,6 +117,9 @@ function createSupabaseRepository(): KickerRepository {
 function createLocalRepository(): KickerRepository {
   return {
     source: "local",
+    async checkConnection() {
+      throw new Error("Supabase ist nicht konfiguriert.");
+    },
     async load() {
       return readLocalData();
     },
