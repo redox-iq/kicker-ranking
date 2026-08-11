@@ -6,12 +6,14 @@ import {
   Home,
   KeyRound,
   ListPlus,
+  LogOut,
   Medal,
   Menu,
   Plus,
   RefreshCw,
   Save,
   Shield,
+  ShieldCheck,
   Swords,
   Trash2,
   Trophy,
@@ -19,6 +21,7 @@ import {
   X
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { clearTrustedDevice, formatTrustedDeviceExpiry, readTrustedDevice, saveTrustedDevice } from "./lib/deviceAccess";
 import { calculateRankings } from "./lib/ranking";
 import { repository } from "./lib/repository";
 import { validateDisplayName, validateMatchInput } from "./lib/validation";
@@ -60,6 +63,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(repository.source === "supabase" ? "checking" : "offline");
   const [groupCode, setGroupCode] = useState(() => window.sessionStorage.getItem("kicker-group-code") ?? "");
+  const [trustedDevice, setTrustedDevice] = useState(() => readTrustedDevice(window.localStorage));
+  const [rememberDevice, setRememberDevice] = useState(repository.source === "supabase");
   const [menuOpen, setMenuOpen] = useState(false);
 
   const reload = useCallback(async () => {
@@ -126,20 +131,60 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function mutate(action: () => Promise<void>) {
-    if (!groupCode.trim()) {
+  async function mutate(action: (credential: string) => Promise<void>): Promise<boolean> {
+    const enteredCode = groupCode.trim();
+    if (!trustedDevice && !enteredCode) {
       setError("Bitte zuerst den Gruppen-Code eingeben.");
-      return;
+      return false;
     }
 
     setBusy(true);
     setError(null);
     try {
-      await action();
+      let credential = trustedDevice?.token ?? enteredCode;
+
+      if (!trustedDevice && rememberDevice && repository.source === "supabase") {
+        const registration = await repository.registerTrustedDevice(enteredCode);
+        saveTrustedDevice(window.localStorage, registration);
+        setTrustedDevice(registration);
+        setGroupCode("");
+        credential = registration.token;
+      }
+
+      await action(credential);
       await reload();
+      return true;
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      if (trustedDevice && message.toLowerCase().includes("gerÃ¤tefreigabe")) {
+        clearTrustedDevice(window.localStorage);
+        setTrustedDevice(null);
+        setError(`${message} Bitte den Gruppen-Code erneut eingeben.`);
+      } else {
+        setError(message);
+      }
       await checkConnection();
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function forgetDevice() {
+    const current = trustedDevice;
+    if (!current) {
+      return;
+    }
+
+    clearTrustedDevice(window.localStorage);
+    setTrustedDevice(null);
+    setGroupCode("");
+    setBusy(true);
+    setError(null);
+    try {
+      await repository.revokeTrustedDevice(current.token);
+    } catch (err) {
+      setError(`Die Freigabe wurde auf diesem GerÃ¤t entfernt. Supabase meldet: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -176,10 +221,28 @@ export default function App() {
           <span className={`source-badge ${connectionStatus}`} role="status" aria-live="polite">
             {connectionStatus === "checking" ? "PrÃ¼feâ€¦" : connectionStatus === "live" ? "Live" : "Offline"}
           </span>
-          <label className="code-input">
-            <KeyRound size={16} />
-            <input value={groupCode} onChange={(event) => setGroupCode(event.target.value)} type="password" placeholder="Gruppen-Code" aria-label="Gruppen-Code" />
-          </label>
+          {trustedDevice ? (
+            <div className="trusted-device" title={`Dieses GerÃ¤t ist bis ${formatTrustedDeviceExpiry(trustedDevice.expiresAt)} freigeschaltet.`}>
+              <ShieldCheck size={16} />
+              <span>GerÃ¤t bis {formatTrustedDeviceExpiry(trustedDevice.expiresAt)}</span>
+              <button type="button" onClick={() => void forgetDevice()} disabled={busy} aria-label="GerÃ¤tefreigabe entfernen" title="GerÃ¤t vergessen">
+                <LogOut size={15} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <label className="code-input">
+                <KeyRound size={16} />
+                <input value={groupCode} onChange={(event) => setGroupCode(event.target.value)} type="password" placeholder="Gruppen-Code" aria-label="Gruppen-Code" />
+              </label>
+              {repository.source === "supabase" ? (
+                <label className="remember-device" title="Nach der nÃ¤chsten erfolgreichen Ã„nderung bleibt dieses GerÃ¤t 30 Tage freigeschaltet.">
+                  <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
+                  <span>30 Tage merken</span>
+                </label>
+              ) : null}
+            </>
+          )}
           <button className="icon-button" type="button" onClick={() => void reload()} aria-label="Daten neu laden" disabled={loading || busy}>
             <RefreshCw size={18} />
           </button>
@@ -200,8 +263,8 @@ export default function App() {
                 rankings={rankings}
                 playersById={playersById}
                 busy={busy}
-                onSave={(input) => mutate(() => repository.upsertMatch(input, groupCode))}
-                onDelete={(matchId) => mutate(() => repository.deleteMatch(matchId, groupCode))}
+                onSave={(input) => mutate((credential) => repository.upsertMatch(input, credential))}
+                onDelete={(matchId) => mutate((credential) => repository.deleteMatch(matchId, credential))}
               />
             ) : null}
             {path === "/rankings.html" ? <RankingsPage rankings={rankings} /> : null}
@@ -210,8 +273,8 @@ export default function App() {
               <PlayersPage
                 players={data.players}
                 busy={busy}
-                onSave={(input) => mutate(() => repository.upsertPlayer(input, groupCode))}
-                onDeactivate={(player) => mutate(() => repository.upsertPlayer({ id: player.id, displayName: player.displayName, active: false }, groupCode))}
+                onSave={(input) => mutate((credential) => repository.upsertPlayer(input, credential))}
+                onDeactivate={(player) => mutate((credential) => repository.upsertPlayer({ id: player.id, displayName: player.displayName, active: false }, credential))}
               />
             ) : null}
           </>
@@ -298,8 +361,8 @@ function MatchesPage({
   rankings: ReturnType<typeof calculateRankings>;
   playersById: Map<string, Player>;
   busy: boolean;
-  onSave: (input: MatchInput) => Promise<void>;
-  onDelete: (matchId: string) => Promise<void>;
+  onSave: (input: MatchInput) => Promise<boolean>;
+  onDelete: (matchId: string) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState<MatchRecord | null>(null);
 
@@ -330,680 +393,4 @@ function MatchesPage({
                 <button
                   className="icon-button danger"
                   type="button"
-                  onClick={() => {
-                    if (window.confirm("Dieses Spiel lÃ¶schen?")) {
-                      void onDelete(match.id);
-                    }
-                  }}
-                  aria-label="Spiel lÃ¶schen"
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <PanelTitle icon={Medal} title="Aktuelle Form" />
-        <StandingList standings={rankings.players.filter((standing) => standing.games > 0).slice(0, 8)} showForm />
-      </section>
-    </div>
-  );
-}
-
-function MatchForm({
-  players,
-  editing,
-  busy,
-  onSave,
-  onCancel
-}: {
-  players: Player[];
-  editing: MatchRecord | null;
-  busy: boolean;
-  onSave: (input: MatchInput) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [draft, setDraft] = useState<MatchInput>(() => toMatchDraft(editing));
-  const [errors, setErrors] = useState<string[]>([]);
-
-  function updateSlot(team: TeamKey, role: Role, playerId: string) {
-    setDraft((current) => ({
-      ...current,
-      slots: current.slots.map((slot) => (slot.team === team && slot.role === role ? { ...slot, playerId } : slot))
-    }));
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const input: MatchInput = {
-      ...draft,
-      playedAt: new Date(draft.playedAt).toISOString(),
-      teamAScore: Number(draft.teamAScore),
-      teamBScore: Number(draft.teamBScore)
-    };
-    const nextErrors = validateMatchInput(input, players);
-    setErrors(nextErrors);
-
-    if (nextErrors.length === 0) {
-      await onSave(input);
-      setDraft(toMatchDraft(null));
-      onCancel();
-    }
-  }
-
-  return (
-    <section className="panel">
-      <PanelTitle icon={editing ? Edit3 : Plus} title={editing ? "Spiel bearbeiten" : "Neues Spiel"} />
-      <form className="match-form" onSubmit={(event) => void submit(event)}>
-        <div className="form-grid">
-          <label>
-            Datum
-            <input type="datetime-local" value={draft.playedAt} onChange={(event) => setDraft({ ...draft, playedAt: event.target.value })} />
-          </label>
-          <label>
-            Team A Tore
-            <input min={0} type="number" value={draft.teamAScore} onChange={(event) => setDraft({ ...draft, teamAScore: Number(event.target.value) })} />
-          </label>
-          <label>
-            Team B Tore
-            <input min={0} type="number" value={draft.teamBScore} onChange={(event) => setDraft({ ...draft, teamBScore: Number(event.target.value) })} />
-          </label>
-          <label>
-            Notiz
-            <input value={draft.note ?? ""} onChange={(event) => setDraft({ ...draft, note: event.target.value })} maxLength={120} />
-          </label>
-        </div>
-
-        <div className="teams-editor">
-          <TeamEditor title="Team A" team="A" draft={draft} players={players} onChange={updateSlot} />
-          <TeamEditor title="Team B" team="B" draft={draft} players={players} onChange={updateSlot} />
-        </div>
-
-        {errors.length > 0 ? (
-          <ul className="form-errors">
-            {errors.map((error) => (
-              <li key={error}>{error}</li>
-            ))}
-          </ul>
-        ) : null}
-
-        <div className="form-actions">
-          {editing ? (
-            <button className="secondary-button" type="button" onClick={onCancel}>
-              <X size={18} /> Abbrechen
-            </button>
-          ) : null}
-          <button className="primary-button" type="submit" disabled={busy || players.length < 4}>
-            <Save size={18} /> Speichern
-          </button>
-        </div>
-      </form>
-    </section>
-  );
-}
-
-function TeamEditor({
-  title,
-  team,
-  draft,
-  players,
-  onChange
-}: {
-  title: string;
-  team: TeamKey;
-  draft: MatchInput;
-  players: Player[];
-  onChange: (team: TeamKey, role: Role, playerId: string) => void;
-}) {
-  return (
-    <fieldset className="team-editor">
-      <legend>{title}</legend>
-      <RoleSelect team={team} role="defense" label="Abwehr/Tor" draft={draft} players={players} onChange={onChange} />
-      <RoleSelect team={team} role="attack" label="Angriff" draft={draft} players={players} onChange={onChange} />
-    </fieldset>
-  );
-}
-
-function RoleSelect({
-  team,
-  role,
-  label,
-  draft,
-  players,
-  onChange
-}: {
-  team: TeamKey;
-  role: Role;
-  label: string;
-  draft: MatchInput;
-  players: Player[];
-  onChange: (team: TeamKey, role: Role, playerId: string) => void;
-}) {
-  const value = draft.slots.find((slot) => slot.team === team && slot.role === role)?.playerId ?? "";
-  const selectedElsewhere = new Set(draft.slots.filter((slot) => !(slot.team === team && slot.role === role)).map((slot) => slot.playerId).filter(Boolean));
-
-  return (
-    <label>
-      {label}
-      <select value={value} onChange={(event) => onChange(team, role, event.target.value)}>
-        <option value="">AuswÃ¤hlen</option>
-        {players.map((player) => (
-          <option key={player.id} value={player.id} disabled={selectedElsewhere.has(player.id)}>
-            {player.displayName}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function RankingsPage({ rankings }: { rankings: ReturnType<typeof calculateRankings> }) {
-  const [tab, setTab] = useState<RankingTab>("overall");
-
-  const attack = [...rankings.players].sort((left, right) => right.attackRating - left.attackRating);
-  const defense = [...rankings.players].sort((left, right) => right.defenseRating - left.defenseRating);
-
-  return (
-    <div className="page-grid">
-      <PageHeader icon={Trophy} eyebrow="Rankings" title="Spieler, Rollen und feste Teams." />
-      <div className="tabs" role="tablist" aria-label="Ranking Ansicht">
-        <TabButton active={tab === "overall"} onClick={() => setTab("overall")} icon={Medal} label="Gesamt" />
-        <TabButton active={tab === "attack"} onClick={() => setTab("attack")} icon={Goal} label="Angriff" />
-        <TabButton active={tab === "defense"} onClick={() => setTab("defense")} icon={Shield} label="Abwehr" />
-        <TabButton active={tab === "teams"} onClick={() => setTab("teams")} icon={Swords} label="Teams" />
-      </div>
-
-      <section className="panel">
-        {tab === "overall" ? <PlayerRankingTable standings={rankings.players} mode="overall" /> : null}
-        {tab === "attack" ? <PlayerRankingTable standings={attack} mode="attack" /> : null}
-        {tab === "defense" ? <PlayerRankingTable standings={defense} mode="defense" /> : null}
-        {tab === "teams" ? <TeamRankingTable teams={rankings.teams} /> : null}
-      </section>
-    </div>
-  );
-}
-
-function StatsPage({
-  rankings,
-  matches,
-  playersById
-}: {
-  rankings: ReturnType<typeof calculateRankings>;
-  matches: MatchRecord[];
-  playersById: Map<string, Player>;
-}) {
-  const withGames = rankings.players.filter((standing) => standing.games > 0);
-  const winRate = [...withGames].sort((left, right) => winRateValue(right) - winRateValue(left) || right.games - left.games).slice(0, 8);
-  const mostGames = [...withGames].sort((left, right) => right.games - left.games).slice(0, 8);
-  const form = [...withGames].sort((left, right) => formScore(right.lastResults) - formScore(left.lastResults)).slice(0, 8);
-  const offense = [...withGames].sort((left, right) => right.attackGoalsFor - left.attackGoalsFor).slice(0, 8);
-  const defense = [...withGames]
-    .filter((standing) => standing.defenseGames > 0)
-    .sort((left, right) => defenseConcededAverage(left) - defenseConcededAverage(right))
-    .slice(0, 8);
-
-  return (
-    <div className="page-grid">
-      <PageHeader icon={BarChart3} eyebrow="Statistiken" title="Leaderboards jenseits vom Elo-Ranking." />
-      <section className="stats-grid">
-        <Leaderboard title="Beste Winrate" icon={Trophy} rows={winRate.map((standing) => [standing.player.displayName, formatPercent(winRateValue(standing)), `${standing.games} Spiele`])} />
-        <Leaderboard title="Formkurve" icon={Medal} rows={form.map((standing) => [standing.player.displayName, `${formScore(standing.lastResults).toFixed(1)} Punkte`, resultDots(standing.lastResults)])} />
-        <Leaderboard title="Meiste Spiele" icon={CalendarDays} rows={mostGames.map((standing) => [standing.player.displayName, `${standing.games}`, `${standing.wins} Siege`])} />
-        <Leaderboard title="Angriffs-Tore" icon={Goal} rows={offense.map((standing) => [standing.player.displayName, `${standing.attackGoalsFor}`, `${standing.attackGames}x Angriff`])} />
-        <Leaderboard title="Beste Abwehrquote" icon={Shield} rows={defense.map((standing) => [standing.player.displayName, defenseConcededAverage(standing).toFixed(1), `${standing.defenseGames}x Abwehr`])} />
-        <Leaderboard
-          title="HÃ¶chste Siege"
-          icon={Swords}
-          rows={rankings.biggestWins.map((match) => [formatMatchTeams(match, playersById), `${match.teamAScore}:${match.teamBScore}`, formatDate(match.playedAt)])}
-        />
-      </section>
-
-      <section className="panel">
-        <PanelTitle icon={CalendarDays} title="Alle Spiele" />
-        <MatchList matches={matches.filter((match) => !match.isDeleted)} playersById={playersById} />
-      </section>
-    </div>
-  );
-}
-
-function PlayersPage({
-  players,
-  busy,
-  onSave,
-  onDeactivate
-}: {
-  players: Player[];
-  busy: boolean;
-  onSave: (input: { id?: string; displayName: string; active?: boolean }) => Promise<void>;
-  onDeactivate: (player: Player) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState<Player | null>(null);
-  const [name, setName] = useState("");
-  const [errors, setErrors] = useState<string[]>([]);
-
-  useEffect(() => {
-    setName(editing?.displayName ?? "");
-    setErrors([]);
-  }, [editing]);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const nextErrors = validateDisplayName(name);
-    const duplicate = players.some((player) => player.id !== editing?.id && player.displayName.trim().toLowerCase() === name.trim().toLowerCase());
-    if (duplicate) {
-      nextErrors.push("Dieser Name existiert bereits.");
-    }
-    setErrors(nextErrors);
-
-    if (nextErrors.length === 0) {
-      await onSave({ id: editing?.id, displayName: name.trim(), active: editing?.active ?? true });
-      setEditing(null);
-      setName("");
-    }
-  }
-
-  return (
-    <div className="page-grid">
-      <PageHeader icon={Users} eyebrow="Spieler" title="Roster verwalten." />
-      <section className="panel">
-        <PanelTitle icon={editing ? Edit3 : Plus} title={editing ? "Spieler bearbeiten" : "Spieler anlegen"} />
-        <form className="player-form" onSubmit={(event) => void submit(event)}>
-          <label>
-            Name
-            <input value={name} onChange={(event) => setName(event.target.value)} maxLength={40} />
-          </label>
-          <div className="form-actions">
-            {editing ? (
-              <button className="secondary-button" type="button" onClick={() => setEditing(null)}>
-                <X size={18} /> Abbrechen
-              </button>
-            ) : null}
-            <button className="primary-button" type="submit" disabled={busy}>
-              <Save size={18} /> Speichern
-            </button>
-          </div>
-        </form>
-        {errors.length > 0 ? (
-          <ul className="form-errors">
-            {errors.map((error) => (
-              <li key={error}>{error}</li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
-
-      <section className="panel">
-        <PanelTitle icon={Users} title="Roster" />
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Seit</th>
-                <th className="align-right">Aktion</th>
-              </tr>
-            </thead>
-            <tbody>
-              {players.map((player) => (
-                <tr key={player.id}>
-                  <td>{player.displayName}</td>
-                  <td>{player.active ? "Aktiv" : "Inaktiv"}</td>
-                  <td>{formatDate(player.createdAt)}</td>
-                  <td className="align-right action-cell">
-                    <button className="icon-button" type="button" onClick={() => setEditing(player)} aria-label={`${player.displayName} bearbeiten`}>
-                      <Edit3 size={17} />
-                    </button>
-                    {player.active ? (
-                      <button
-                        className="icon-button danger"
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm(`${player.displayName} deaktivieren? Historische Spiele bleiben erhalten.`)) {
-                            void onDeactivate(player);
-                          }
-                        }}
-                        aria-label={`${player.displayName} deaktivieren`}
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function PlayerRankingTable({ standings, mode }: { standings: PlayerStanding[]; mode: "overall" | "attack" | "defense" }) {
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Spieler</th>
-            <th>Rating</th>
-            <th>Spiele</th>
-            <th>Winrate</th>
-            <th>Tore</th>
-            <th>Form</th>
-          </tr>
-        </thead>
-        <tbody>
-          {standings.map((standing, index) => {
-            const rating = mode === "attack" ? standing.attackRating : mode === "defense" ? standing.defenseRating : standing.overallRating;
-            const roleGames = mode === "attack" ? standing.attackGames : mode === "defense" ? standing.defenseGames : standing.games;
-            return (
-              <tr key={standing.player.id}>
-                <td>{index + 1}</td>
-                <td>
-                  <strong>{standing.player.displayName}</strong>
-                  {standing.games < 10 ? <span className="muted-inline">provisorisch</span> : null}
-                </td>
-                <td>{formatRating(rating)}</td>
-                <td>{roleGames}</td>
-                <td>{formatPercent(winRateValue(standing))}</td>
-                <td>{standing.goalsFor}:{standing.goalsAgainst}</td>
-                <td>{resultDots(standing.lastResults)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function TeamRankingTable({ teams }: { teams: TeamStanding[] }) {
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Team</th>
-            <th>Rating</th>
-            <th>Spiele</th>
-            <th>Winrate</th>
-            <th>TorverhÃ¤ltnis</th>
-            <th>Form</th>
-          </tr>
-        </thead>
-        <tbody>
-          {teams.map((team, index) => (
-            <tr key={team.key}>
-              <td>{index + 1}</td>
-              <td>
-                <strong>{team.defensePlayer.displayName}</strong>
-                <span className="role-pill">Abwehr</span>
-                <strong>{team.attackPlayer.displayName}</strong>
-                <span className="role-pill attack">Angriff</span>
-              </td>
-              <td>{formatRating(team.rating)}</td>
-              <td>{team.games}</td>
-              <td>{formatPercent(team.games ? team.wins / team.games : 0)}</td>
-              <td>{team.goalsFor}:{team.goalsAgainst}</td>
-              <td>{resultDots(team.lastResults)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function StandingList({ standings, showForm = false }: { standings: PlayerStanding[]; showForm?: boolean }) {
-  if (standings.length === 0) {
-    return <EmptyState text="Noch keine Wertung vorhanden." />;
-  }
-
-  return (
-    <ol className="standing-list">
-      {standings.map((standing) => (
-        <li key={standing.player.id}>
-          <span>
-            <strong>{standing.player.displayName}</strong>
-            <small>{standing.games} Spiele Â· {formatPercent(winRateValue(standing))}</small>
-          </span>
-          <span className="list-score">{showForm ? resultDots(standing.lastResults) : formatRating(standing.overallRating)}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function MatchList({ matches, playersById, compact = false }: { matches: MatchRecord[]; playersById: Map<string, Player>; compact?: boolean }) {
-  const visible = [...matches]
-    .filter((match) => !match.isDeleted)
-    .sort((left, right) => new Date(right.playedAt).getTime() - new Date(left.playedAt).getTime());
-
-  if (visible.length === 0) {
-    return <EmptyState text="Noch keine Spiele vorhanden." />;
-  }
-
-  return (
-    <div className={compact ? "match-list compact" : "match-list"}>
-      {visible.map((match) => (
-        <MatchSummary key={match.id} match={match} playersById={playersById} />
-      ))}
-    </div>
-  );
-}
-
-function MatchSummary({ match, playersById }: { match: MatchRecord; playersById: Map<string, Player> }) {
-  const teamA = teamLabel(match, "A", playersById);
-  const teamB = teamLabel(match, "B", playersById);
-  const winner = match.teamAScore === match.teamBScore ? "draw" : match.teamAScore > match.teamBScore ? "A" : "B";
-
-  return (
-    <div className="match-summary">
-      <div>
-        <time>{formatDate(match.playedAt)}</time>
-        {match.note ? <small>{match.note}</small> : null}
-      </div>
-      <div className={winner === "A" ? "team-line winner" : "team-line"}>
-        <span>{teamA}</span>
-        <strong>{match.teamAScore}</strong>
-      </div>
-      <div className={winner === "B" ? "team-line winner" : "team-line"}>
-        <span>{teamB}</span>
-        <strong>{match.teamBScore}</strong>
-      </div>
-    </div>
-  );
-}
-
-function Leaderboard({ title, icon: Icon, rows }: { title: string; icon: typeof Trophy; rows: string[][] }) {
-  return (
-    <section className="panel">
-      <PanelTitle icon={Icon} title={title} />
-      {rows.length === 0 ? (
-        <EmptyState text="Noch keine Daten." />
-      ) : (
-        <ol className="leaderboard">
-          {rows.map((row, index) => (
-            <li key={`${title}-${row.join("-")}`}>
-              <span className="rank-number">{index + 1}</span>
-              <strong>{row[0]}</strong>
-              <span>{row[1]}</span>
-              <small>{row[2]}</small>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
-}
-
-function Metric({ icon: Icon, label, value, detail }: { icon: typeof Trophy; label: string; value: string; detail: string }) {
-  return (
-    <article className="metric-card">
-      <Icon size={20} />
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </article>
-  );
-}
-
-function PageHeader({ icon: Icon, eyebrow, title }: { icon: typeof Trophy; eyebrow: string; title: string }) {
-  return (
-    <section className="page-header">
-      <Icon size={22} />
-      <div>
-        <span className="eyebrow">{eyebrow}</span>
-        <h1>{title}</h1>
-      </div>
-    </section>
-  );
-}
-
-function PanelTitle({ icon: Icon, title }: { icon: typeof Trophy; title: string }) {
-  return (
-    <div className="panel-title">
-      <Icon size={19} />
-      <h2>{title}</h2>
-    </div>
-  );
-}
-
-function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: typeof Trophy; label: string }) {
-  return (
-    <button className={active ? "tab active" : "tab"} type="button" onClick={onClick}>
-      <Icon size={17} />
-      {label}
-    </button>
-  );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <p className="empty-state">{text}</p>;
-}
-
-function LoadingState() {
-  return (
-    <div className="loading-state">
-      <RefreshCw size={24} />
-      <span>Lade Ranking...</span>
-    </div>
-  );
-}
-
-function toMatchDraft(match: MatchRecord | null): MatchInput {
-  if (!match) {
-    return {
-      playedAt: toDateTimeLocalValue(new Date().toISOString()),
-      teamAScore: 10,
-      teamBScore: 0,
-      note: "",
-      slots: emptySlots.map((slot) => ({ ...slot }))
-    };
-  }
-
-  return {
-    id: match.id,
-    playedAt: toDateTimeLocalValue(match.playedAt),
-    teamAScore: match.teamAScore,
-    teamBScore: match.teamBScore,
-    note: match.note ?? "",
-    slots: emptySlots.map((emptySlot) => match.slots.find((slot) => slot.team === emptySlot.team && slot.role === emptySlot.role) ?? { ...emptySlot })
-  };
-}
-
-function readRoute(): RoutePath {
-  const pathname = window.location.pathname;
-  const withoutBase = basePath && pathname.startsWith(basePath) ? pathname.slice(basePath.length) || "/" : pathname;
-  const normalized = withoutBase.length > 1 ? withoutBase.replace(/\/$/, "") : withoutBase;
-  const legacyRoute = legacyRoutes[normalized];
-  if (legacyRoute) {
-    return legacyRoute;
-  }
-  const current = normalized as RoutePath;
-  return routes.some((route) => route.path === current) ? current : "/";
-}
-
-function teamLabel(match: MatchRecord, team: TeamKey, playersById: Map<string, Player>): string {
-  const defense = match.slots.find((slot) => slot.team === team && slot.role === "defense");
-  const attack = match.slots.find((slot) => slot.team === team && slot.role === "attack");
-  const defenseName = defense ? playersById.get(defense.playerId)?.displayName ?? "Unbekannt" : "Unbekannt";
-  const attackName = attack ? playersById.get(attack.playerId)?.displayName ?? "Unbekannt" : "Unbekannt";
-  return `${defenseName} / ${attackName}`;
-}
-
-function formatMatchTeams(match: MatchRecord, playersById: Map<string, Player>): string {
-  return `${teamLabel(match, "A", playersById)} vs. ${teamLabel(match, "B", playersById)}`;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-}
-
-function toDateTimeLocalValue(value: string): string {
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
-
-function formatRating(value: number): string {
-  return Math.round(value).toString();
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(value * 100)}%`;
-}
-
-function winRateValue(standing: PlayerStanding): number {
-  return standing.games ? standing.wins / standing.games : 0;
-}
-
-function defenseConcededAverage(standing: PlayerStanding): number {
-  return standing.defenseGames ? standing.defenseGoalsAgainst / standing.defenseGames : Number.POSITIVE_INFINITY;
-}
-
-function formScore(results: MatchResult[]): number {
-  if (results.length === 0) {
-    return 0;
-  }
-
-  return (
-    results.reduce((score, result) => {
-      if (result === "win") {
-        return score + 3;
-      }
-      if (result === "draw") {
-        return score + 1;
-      }
-      return score;
-    }, 0) / results.length
-  );
-}
-
-function resultDots(results: MatchResult[]): string {
-  if (results.length === 0) {
-    return "â€“";
-  }
-
-  return results
-    .map((result) => {
-      if (result === "win") {
-        return "S";
-      }
-      if (result === "draw") {
-        return "U";
-      }
-      return "N";
-    })
-    .join(" ");
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unbekannter Fehler.";
-}
+                  onClicm´×_-¢G§²ÚîÆ­yÕ¹Ğ ¨¤°½Õ¹Ğ¡‘¥ÍÑ¥¹ĞÁ±…å•É}¥¤(€¥¹Ñ¼Ù}Í±½Ñ}½Õ¹Ğ°Ù}‘¥ÍÑ¥¹Ñ}Á±…å•ÉÌ(€™É½´Í±½ÑÌì((€¥˜Ù}Í±½Ñ}½Õ¹Ğ€ğø€Ğ½ÈÙ}‘¥ÍÑ¥¹Ñ}Á±…å•ÉÌ€ğø€ĞÑ¡•¸(€€€É…¥Í”•á•ÁÑ¥½¸€Y¥•ÈÕ¹Ñ•ÉÍ¡¥•‘±¥¡”MÁ¥•±•ÈÍ¥¹•É™½É‘•É±¥ ¸œì(€•¹¥˜ì((€İ¥Ñ Í±½ÑÌ…Ì€ (€€€Í•±•Ğ€¨(€€€™É½´©Í½¹‰}Ñ½}É•½É‘Í•Ğ¡Á}Í±½ÑÌ¤…ÌÍ±½Ğ¡Á±…å•É}¥ÕÕ¥°Ñ•…´Ñ•áĞ°É½±”Ñ•áĞ¤(€€¤°(€•áÁ•Ñ•…Ì€ (€€€Í•±•ĞÑ•…´°É½±”(€€€™É½´€¡Ù…±Õ•Ì€ œ°€‘•™•¹Í”œ¤°€ œ°€…ÑÑ…¬œ¤°€ œ°€‘•™•¹Í”œ¤°€ œ°€…ÑÑ…¬œ¤¤…Ì•áÁ•Ñ•¡Ñ•…´°É½±”¤(€€¤(€Í•±•Ğ½Õ¹Ğ ¨¤(€¥¹Ñ¼Ù}¥¹Ù…±¥‘}Í±½ÑÌ(€™É½´•áÁ•Ñ•(€±•™Ğ©½¥¸Í±½ÑÌ½¸Í±½ÑÌ¹Ñ•…´€ô•áÁ•Ñ•¹Ñ•…´…¹Í±½ÑÌ¹É½±”€ô•áÁ•Ñ•¹É½±”(€İ¡•É”Í±½ÑÌ¹Á±…å•É}¥¥Ì¹Õ±°ì((€¥˜Ù}¥¹Ù…±¥‘}Í±½ÑÌ€ğø€ÀÑ¡•¸(€€€É…¥Í”•á•ÁÑ¥½¸€)•‘•ÌQ•…´‰É…Õ¡Ğ¹É¥™˜Õ¹‰İ•¡È¸œì(€•¹¥˜ì((€İ¥Ñ Í±½ÑÌ…Ì€ (€€€Í•±•Ğ€¨(€€€™É½´©Í½¹‰}Ñ½}É•½É‘Í•Ğ¡Á}Í±½ÑÌ¤…ÌÍ±½Ğ¡Á±…å•É}¥ÕÕ¥°Ñ•…´Ñ•áĞ°É½±”Ñ•áĞ¤(€€¤(€Í•±•Ğ½Õ¹Ğ ¨¤(€¥¹Ñ¼Ù}¥¹…Ñ¥Ù•}Á±…å•ÉÌ(€™É½´Í±½ÑÌ(€±•™Ğ©½¥¸ÁÕ‰±¥Œ¹Á±…å•ÉÌÁ±…å•È½¸Á±…å•È¹¥€ôÍ±½ÑÌ¹Á±…å•É}¥…¹Á±…å•È¹…Ñ¥Ù”€ôÑÉÕ”(€İ¡•É”Á±…å•È¹¥¥Ì¹Õ±°ì((€¥˜Ù}¥¹…Ñ¥Ù•}Á±…å•ÉÌ€ğø€ÀÑ¡•¸(€€€É…¥Í”•á•ÁÑ¥½¸€±±”MÁ¥•±•ÈµÕ•ÍÍ•¸…­Ñ¥ØÍ•¥¸¸œì(€•¹¥˜ì)•¹ì(ì()É•…Ñ”½ÈÉ•Á±…”™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÕÁÍ•ÉÑ}Á±…å•È (€Á}É½ÕÁ}½‘”Ñ•áĞ°(€Á}Á±…å•É}¥ÕÕ¥°(€Á}‘¥ÍÁ±…å}¹…µ”Ñ•áĞ°(€Á}…Ñ¥Ù”‰½½±•…¸‘•™…Õ±ĞÑÉÕ”(¤)É•ÑÕÉ¹ÌÕÕ¥)±…¹Õ…”Á±ÁÍÅ°)Í•ÕÉ¥Ñä‘•™¥¹•È)Í•ĞÍ•…É¡}Á…Ñ €ôÁÕ‰±¥Œ)…Ì€)‘•±…É”(€Ù}Á±…å•É}¥ÕÕ¥ì)‰•¥¸(€Á•É™½É´ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}É½ÕÁ}½‘”¡Á}É½ÕÁ}½‘”¤ì((€¥˜Á}‘¥ÍÁ±…å}¹…µ”¥Ì¹Õ±°½È¡…É}±•¹Ñ ¡ÑÉ¥´¡Á}‘¥ÍÁ±…å}¹…µ”¤¤€ô€À½È¡…É}±•¹Ñ ¡ÑÉ¥´¡Á}‘¥ÍÁ±…å}¹…µ”¤¤€ø€ĞÀÑ¡•¸(€€€É…¥Í”•á•ÁÑ¥½¸€MÁ¥•±•É¹…µ”¥ÍĞÕ¹Õ•±Ñ¥œ¸œì(€•¹¥˜ì((€¥˜Á}Á±…å•É}¥¥Ì¹Õ±°Ñ¡•¸(€€€¥¹Í•ÉĞ¥¹Ñ¼ÁÕ‰±¥Œ¹Á±…å•ÉÌ¡‘¥ÍÁ±…å}¹…µ”°…Ñ¥Ù”¤(€€€Ù…±Õ•Ì€¡ÑÉ¥´¡Á}‘¥ÍÁ±…å}¹…µ”¤°½…±•Í”¡Á}…Ñ¥Ù”°ÑÉÕ”¤¤(€€€É•ÑÕÉ¹¥¹œ¥¥¹Ñ¼Ù}Á±…å•É}¥ì(€•±Í”(€€€ÕÁ‘…Ñ”ÁÕ‰±¥Œ¹Á±…å•ÉÌ(€€€Í•Ğ‘¥ÍÁ±…å}¹…µ”€ôÑÉ¥´¡Á}‘¥ÍÁ±…å}¹…µ”¤°(€€€€€€€…Ñ¥Ù”€ô½…±•Í”¡Á}…Ñ¥Ù”°…Ñ¥Ù”¤(€€€İ¡•É”¥€ôÁ}Á±…å•É}¥(€€€É•ÑÕÉ¹¥¹œ¥¥¹Ñ¼Ù}Á±…å•É}¥ì((€€€¥˜Ù}Á±…å•É}¥¥Ì¹Õ±°Ñ¡•¸(€€€€€É…¥Í”•á•ÁÑ¥½¸€MÁ¥•±•ÈİÕÉ‘”¹¥¡Ğ•™Õ¹‘•¸¸œì(€€€•¹¥˜ì(€•¹¥˜ì((€É•ÑÕÉ¸Ù}Á±…å•É}¥ì)•¹ì(ì()É•…Ñ”½ÈÉ•Á±…”™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÍÕ‰µ¥Ñ}µ…Ñ  (€Á}É½ÕÁ}½‘”Ñ•áĞ°(€Á}Á±…å•‘}…ĞÑ¥µ•ÍÑ…µÁÑè°(€Á}Ñ•…µ}…}Í½É”¥¹Ñ••È°(€Á}Ñ•…µ}‰}Í½É”¥¹Ñ••È°(€Á}¹½Ñ”Ñ•áĞ°(€Á}Í±½ÑÌ©Í½¹ˆ(¤)É•ÑÕÉ¹ÌÕÕ¥)±…¹Õ…”Á±ÁÍÅ°)Í•ÕÉ¥Ñä‘•™¥¹•È)Í•ĞÍ•…É¡}Á…Ñ €ôÁÕ‰±¥Œ)…Ì€)‘•±…É”(€Ù}µ…Ñ¡}¥ÕÕ¥ì)‰•¥¸(€Á•É™½É´ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}É½ÕÁ}½‘”¡Á}É½ÕÁ}½‘”¤ì(€Á•É™½É´ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}µ…Ñ¡}Á…å±½…¡Á}Á±…å•‘}…Ğ°Á}Ñ•…µ}…}Í½É”°Á}Ñ•…µ}‰}Í½É”°Á}¹½Ñ”°Á}Í±½ÑÌ¤ì((€¥¹Í•ÉĞ¥¹Ñ¼ÁÕ‰±¥Œ¹µ…Ñ¡•Ì¡Á±…å•‘}…Ğ°Ñ•…µ}…}Í½É”°Ñ•…µ}‰}Í½É”°¹½Ñ”¤(€Ù…±Õ•Ì€¡Á}Á±…å•‘}…Ğ°Á}Ñ•…µ}…}Í½É”°Á}Ñ•…µ}‰}Í½É”°¹Õ±±¥˜¡ÑÉ¥´¡½…±•Í”¡Á}¹½Ñ”°€œœ¤¤°€œœ¤¤(€É•ÑÕÉ¹¥¹œ¥¥¹Ñ¼Ù}µ…Ñ¡}¥ì((€¥¹Í•ÉĞ¥¹Ñ¼ÁÕ‰±¥Œ¹µ…Ñ¡}Í±½ÑÌ¡µ…Ñ¡}¥°Á±…å•É}¥°Ñ•…´°É½±”¤(€Í•±•ĞÙ}µ…Ñ¡}¥°Á±…å•É}¥°Ñ•…´°É½±”(€™É½´©Í½¹‰}Ñ½}É•½É‘Í•Ğ¡Á}Í±½ÑÌ¤…ÌÍ±½Ğ¡Á±…å•É}¥ÕÕ¥°Ñ•…´Ñ•áĞ°É½±”Ñ•áĞ¤ì((€É•ÑÕÉ¸Ù}µ…Ñ¡}¥ì)•¹ì(ì()É•…Ñ”½ÈÉ•Á±…”™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÕÁ‘…Ñ•}µ…Ñ  (€Á}É½ÕÁ}½‘”Ñ•áĞ°(€Á}µ…Ñ¡}¥ÕÕ¥°(€Á}Á±…å•‘}…ĞÑ¥µ•ÍÑ…µÁÑè°(€Á}Ñ•…µ}…}Í½É”¥¹Ñ••È°(€Á}Ñ•…µ}‰}Í½É”¥¹Ñ••È°(€Á}¹½Ñ”Ñ•áĞ°(€Á}Í±½ÑÌ©Í½¹ˆ(¤)É•ÑÕÉ¹ÌÕÕ¥)±…¹Õ…”Á±ÁÍÅ°)Í•ÕÉ¥Ñä‘•™¥¹•È)Í•ĞÍ•…É¡}Á…Ñ €ôÁÕ‰±¥Œ)…Ì€)‘•±…É”(€Ù}µ…Ñ¡}¥ÕÕ¥ì)‰•¥¸(€Á•É™½É´ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}É½ÕÁ}½‘”¡Á}É½ÕÁ}½‘”¤ì(€Á•É™½É´ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}µ…Ñ¡}Á…å±½…¡Á}Á±…å•‘}…Ğ°Á}Ñ•…µ}…}Í½É”°Á}Ñ•…µ}‰}Í½É”°Á}¹½Ñ”°Á}Í±½ÑÌ¤ì((€ÕÁ‘…Ñ”ÁÕ‰±¥Œ¹µ…Ñ¡•Ì(€Í•ĞÁ±…å•‘}…Ğ€ôÁ}Á±…å•‘}…Ğ°(€€€€€Ñ•…µ}…}Í½É”€ôÁ}Ñ•…µ}…}Í½É”°(€€€€€Ñ•…µ}‰}Í½É”€ôÁ}Ñ•…µ}‰}Í½É”°(€€€€€¹½Ñ”€ô¹Õ±±¥˜¡ÑÉ¥´¡½…±•Í”¡Á}¹½Ñ”°€œœ¤¤°€œœ¤(€İ¡•É”¥€ôÁ}µ…Ñ¡}¥(€€€…¹¥Í}‘•±•Ñ•€ô™…±Í”(€É•ÑÕÉ¹¥¹œ¥¥¹Ñ¼Ù}µ…Ñ¡}¥ì((€¥˜Ù}µ…Ñ¡}¥¥Ì¹Õ±°Ñ¡•¸(€€€É…¥Í”•á•ÁÑ¥½¸€MÁ¥•°İÕÉ‘”¹¥¡Ğ•™Õ¹‘•¸¸œì(€•¹¥˜ì((€‘•±•Ñ”™É½´ÁÕ‰±¥Œ¹µ…Ñ¡}Í±½ÑÌ(€İ¡•É”µ…Ñ¡}¥€ôÁ}µ…Ñ¡}¥ì((€¥¹Í•ÉĞ¥¹Ñ¼ÁÕ‰±¥Œ¹µ…Ñ¡}Í±½ÑÌ¡µ…Ñ¡}¥°Á±…å•É}¥°Ñ•…´°É½±”¤(€Í•±•ĞÁ}µ…Ñ¡}¥°Á±…å•É}¥°Ñ•…´°É½±”(€™É½´©Í½¹‰}Ñ½}É•½É‘Í•Ğ¡Á}Í±½ÑÌ¤…ÌÍ±½Ğ¡Á±…å•É}¥ÕÕ¥°Ñ•…´Ñ•áĞ°É½±”Ñ•áĞ¤ì((€É•ÑÕÉ¸Á}µ…Ñ¡}¥ì)•¹ì(ì()É•…Ñ”½ÈÉ•Á±…”™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹‘•±•Ñ•}µ…Ñ  (€Á}É½ÕÁ}½‘”Ñ•áĞ°(€Á}µ…Ñ¡}¥ÕÕ¥(¤)É•ÑÕÉ¹ÌÙ½¥)±…¹Õ…”Á±ÁÍÅ°)Í•ÕÉ¥Ñä‘•™¥¹•È)Í•ĞÍ•…É¡}Á…Ñ €ôÁÕ‰±¥Œ)…Ì€)‰•¥¸(€Á•É™½É´ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}É½ÕÁ}½‘”¡Á}É½ÕÁ}½‘”¤ì((€ÕÁ‘…Ñ”ÁÕ‰±¥Œ¹µ…Ñ¡•Ì(€Í•Ğ¥Í}‘•±•Ñ•€ôÑÉÕ”°(€€€€€‘•±•Ñ•‘}…Ğ€ô¹½Ü ¤(€İ¡•É”¥€ôÁ}µ…Ñ¡}¥(€€€…¹¥Í}‘•±•Ñ•€ô™…±Í”ì)•¹ì(ì()É…¹ĞÕÍ…”½¸Í¡•µ„ÁÕ‰±¥ŒÑ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É…¹ĞÍ•±•Ğ½¸ÁÕ‰±¥Œ¹Á±…å•ÉÌ°ÁÕ‰±¥Œ¹µ…Ñ¡•Ì°ÁÕ‰±¥Œ¹µ…Ñ¡}Í±½ÑÌ°ÁÕ‰±¥Œ¹­••Á…±¥Ù”Ñ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É•Ù½­”…±°½¸ÁÕ‰±¥Œ¹…ÁÁ}Í•ÑÑ¥¹Ì°ÁÕ‰±¥Œ¹ÑÉÕÍÑ•‘}‘•Ù¥•Ì™É½´ÁÕ‰±¥Œ°…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì()É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹É•¥ÍÑ•É}ÑÉÕÍÑ•‘}‘•Ù¥”¡Ñ•áĞ¤™É½´ÁÕ‰±¥Œì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹É•Ù½­•}ÑÉÕÍÑ•‘}‘•Ù¥”¡Ñ•áĞ¤™É½´ÁÕ‰±¥Œì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÕÁÍ•ÉÑ}Á±…å•È¡Ñ•áĞ°ÕÕ¥°Ñ•áĞ°‰½½±•…¸¤™É½´ÁÕ‰±¥Œì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÍÕ‰µ¥Ñ}µ…Ñ ¡Ñ•áĞ°Ñ¥µ•ÍÑ…µÁÑè°¥¹Ñ••È°¥¹Ñ••È°Ñ•áĞ°©Í½¹ˆ¤™É½´ÁÕ‰±¥Œì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÕÁ‘…Ñ•}µ…Ñ ¡Ñ•áĞ°ÕÕ¥°Ñ¥µ•ÍÑ…µÁÑè°¥¹Ñ••È°¥¹Ñ••È°Ñ•áĞ°©Í½¹ˆ¤™É½´ÁÕ‰±¥Œì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹‘•±•Ñ•}µ…Ñ ¡Ñ•áĞ°ÕÕ¥¤™É½´ÁÕ‰±¥Œì()É…¹Ğ•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹É•¥ÍÑ•É}ÑÉÕÍÑ•‘}‘•Ù¥”¡Ñ•áĞ¤Ñ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É…¹Ğ•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹É•Ù½­•}ÑÉÕÍÑ•‘}‘•Ù¥”¡Ñ•áĞ¤Ñ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É…¹Ğ•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÕÁÍ•ÉÑ}Á±…å•È¡Ñ•áĞ°ÕÕ¥°Ñ•áĞ°‰½½±•…¸¤Ñ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É…¹Ğ•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÍÕ‰µ¥Ñ}µ…Ñ ¡Ñ•áĞ°Ñ¥µ•ÍÑ…µÁÑè°¥¹Ñ••È°¥¹Ñ••È°Ñ•áĞ°©Í½¹ˆ¤Ñ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É…¹Ğ•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹ÕÁ‘…Ñ•}µ…Ñ ¡Ñ•áĞ°ÕÕ¥°Ñ¥µ•ÍÑ…µÁÑè°¥¹Ñ••È°¥¹Ñ••È°Ñ•áĞ°©Í½¹ˆ¤Ñ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É…¹Ğ•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹‘•±•Ñ•}µ…Ñ ¡Ñ•áĞ°ÕÕ¥¤Ñ¼…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì()É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹Í•Ñ}É½ÕÁ}½‘”¡Ñ•áĞ¤™É½´ÁÕ‰±¥Œ°…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹Ù…±¥‘…Ñ•}É½ÕÁ}½‘”¡Ñ•áĞ¤™É½´ÁÕ‰±¥Œ°…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}É½ÕÁ}½‘”¡Ñ•áĞ¤™É½´ÁÕ‰±¥Œ°…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹±•…¹ÕÁ}•áÁ¥É•‘}ÑÉÕÍÑ•‘}‘•Ù¥•Ì ¤™É½´ÁÕ‰±¥Œ°…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì)É•Ù½­”•á•ÕÑ”½¸™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹…ÍÍ•ÉÑ}µ…Ñ¡}Á…å±½…¡Ñ¥µ•ÍÑ…µÁÑè°¥¹Ñ••È°¥¹Ñ••È°Ñ•áĞ°©Í½¹ˆ¤™É½´ÁÕ‰±¥Œ°…¹½¸°…ÕÑ¡•¹Ñ¥…Ñ•ì()Í•±•ĞÉ½¸¹Í¡•‘Õ±” (€€±•…¹ÕÀµ•áÁ¥É•µÑÉÕÍÑ•µ‘•Ù¥•Ìœ°(€€œÀ€Ì€Ä€¨€¨œ°(€€‘Í•±•ĞÁÕ‰±¥Œ¹±•…¹ÕÁ}•áÁ¥É•‘}ÑÉÕÍÑ•‘}‘•Ù¥•Ì ¤ì(¤ì((´´IÕ¸½¹”…™Ñ•È…ÁÁ±å¥¹œÑ¡¥ÌÍ¡•µ„°Ñ¡•¸É•Á±…”Ñ¡”Ù…±Õ”İ¡•¹•Ù•ÈÑ¡”Í¡…É•½‘”¡…¹•Ìè(´´Í•±•ĞÁÕ‰±¥Œ¹Í•Ñ}É½ÕÁ}½‘” ‘•¥¸µ½‘”œ¤ì

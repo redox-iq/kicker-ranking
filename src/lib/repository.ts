@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { demoData } from "../data/demo";
 import type { KickerData, MatchInput, MatchRecord, MatchSlot, Player, PlayerInput } from "../types";
+import type { TrustedDeviceCredential } from "./deviceAccess";
 
 const LOCAL_STORAGE_KEY = "uni-kicker-ranking:data:v1";
 
@@ -10,9 +11,11 @@ export interface KickerRepository {
   source: DataSource;
   checkConnection(): Promise<void>;
   load(): Promise<KickerData>;
-  upsertPlayer(input: PlayerInput, groupCode: string): Promise<void>;
-  upsertMatch(input: MatchInput, groupCode: string): Promise<void>;
-  deleteMatch(matchId: string, groupCode: string): Promise<void>;
+  registerTrustedDevice(groupCode: string): Promise<TrustedDeviceCredential>;
+  revokeTrustedDevice(deviceToken: string): Promise<void>;
+  upsertPlayer(input: PlayerInput, credential: string): Promise<void>;
+  upsertMatch(input: MatchInput, credential: string): Promise<void>;
+  deleteMatch(matchId: string, credential: string): Promise<void>;
 }
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ?? "";
@@ -67,9 +70,29 @@ function createSupabaseRepository(): KickerRepository {
         matches: (matchesResponse.data ?? []).map((row) => mapMatchRow(row, slotsByMatch.get(row.id) ?? []))
       };
     },
-    async upsertPlayer(input, groupCode) {
+    async registerTrustedDevice(groupCode) {
+      const { data, error } = await supabase.rpc("register_trusted_device", {
+        p_group_code: groupCode
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return parseTrustedDeviceRegistration(data);
+    },
+    async revokeTrustedDevice(deviceToken) {
+      const { error } = await supabase.rpc("revoke_trusted_device", {
+        p_device_token: deviceToken
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    async upsertPlayer(input, credential) {
       const { error } = await supabase.rpc("upsert_player", {
-        p_group_code: groupCode,
+        p_group_code: credential,
         p_player_id: input.id ?? null,
         p_display_name: input.displayName.trim(),
         p_active: input.active ?? true
@@ -79,9 +102,9 @@ function createSupabaseRepository(): KickerRepository {
         throw new Error(error.message);
       }
     },
-    async upsertMatch(input, groupCode) {
+    async upsertMatch(input, credential) {
       const payload = {
-        p_group_code: groupCode,
+        p_group_code: credential,
         p_played_at: input.playedAt,
         p_team_a_score: input.teamAScore,
         p_team_b_score: input.teamBScore,
@@ -101,9 +124,9 @@ function createSupabaseRepository(): KickerRepository {
         throw new Error(response.error.message);
       }
     },
-    async deleteMatch(matchId, groupCode) {
+    async deleteMatch(matchId, credential) {
       const { error } = await supabase.rpc("delete_match", {
-        p_group_code: groupCode,
+        p_group_code: credential,
         p_match_id: matchId
       });
 
@@ -122,6 +145,12 @@ function createLocalRepository(): KickerRepository {
     },
     async load() {
       return readLocalData();
+    },
+    async registerTrustedDevice() {
+      throw new Error("Die Gerätefreigabe ist nur mit Supabase verfügbar.");
+    },
+    async revokeTrustedDevice() {
+      return Promise.resolve();
     },
     async upsertPlayer(input, groupCode) {
       assertLocalCode(groupCode);
@@ -218,6 +247,22 @@ function createId(prefix: string): string {
 
 function cloneData(data: KickerData): KickerData {
   return JSON.parse(JSON.stringify(data)) as KickerData;
+}
+
+function parseTrustedDeviceRegistration(data: unknown): TrustedDeviceCredential {
+  if (!data || typeof data !== "object") {
+    throw new Error("Supabase hat keine gültige Gerätefreigabe zurückgegeben.");
+  }
+
+  const result = data as Record<string, unknown>;
+  const token = typeof result.token === "string" ? result.token : "";
+  const expiresAt = typeof result.expires_at === "string" ? result.expires_at : "";
+
+  if (!token.startsWith("device_") || Number.isNaN(Date.parse(expiresAt))) {
+    throw new Error("Supabase hat eine ungültige Gerätefreigabe zurückgegeben.");
+  }
+
+  return { token, expiresAt };
 }
 
 function mapPlayerRow(row: Record<string, unknown>): Player {

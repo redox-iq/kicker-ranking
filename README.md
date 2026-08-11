@@ -26,6 +26,16 @@ select public.set_group_code('dein-code');
 
 Die Supabase-Tabellen sind oeffentlich lesbar, Schreibzugriffe laufen ueber RPC-Funktionen und pruefen den Gruppen-Code serverseitig.
 
+## Dieses Geraet 30 Tage merken
+
+Neben dem Gruppen-Code kann die App ein Geraet fuer 30 Tage freischalten. Aktiviere dazu `30 Tage merken` und fuehre die naechste Aenderung aus. Nach erfolgreicher Code-Pruefung erzeugt Supabase einen zufaelligen Geraete-Token. Im Browser liegt nur dieser Token; Supabase speichert davon lediglich einen SHA-256-Hash. Der eigentliche Gruppen-Code wird nicht dauerhaft gespeichert.
+
+Bei bestehenden Supabase-Projekten muss `supabase/trusted-device-migration.sql` einmal im SQL Editor ausgefuehrt werden. Bei einer Neueinrichtung reicht das vollstaendige `supabase/schema.sql`. Dadurch werden die Tabelle `trusted_devices`, die Token-Funktionen und die korrigierten Funktionsrechte eingerichtet. Ueber `Geraet vergessen` wird die lokale Freigabe entfernt und der Token in Supabase widerrufen.
+
+Supabase Cron entfernt abgelaufene und widerrufene Geraete-Tokens automatisch am ersten Tag jedes Monats um 03:00 UTC. Ein Kalender-Cron kann kein exakt gleich langes 30-Tage-Intervall ueber unterschiedlich lange Monate ausdruecken; der Aufraeumlauf findet deshalb alle 28 bis 31 Tage statt.
+
+Schlaegt eine Aenderung wegen eines falschen Codes, einer abgelaufenen Geraetefreigabe oder eines Netzwerkfehlers fehl, bleiben die eingegebenen Formularwerte erhalten.
+
 ## GitHub Pages
 
 Der GitHub-Pages-Workflow liest die Supabase-Konfiguration aus Repository Variables:

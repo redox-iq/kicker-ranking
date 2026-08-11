@@ -184,6 +184,53 @@ button:disabled {
   color: var(--ink);
 }
 
+.remember-device {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.remember-device input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green);
+}
+
+.trusted-device {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(47, 125, 90, 0.28);
+  border-radius: 8px;
+  background: #e7f0ea;
+  color: var(--green-dark);
+  padding: 0 6px 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.trusted-device button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+
+.trusted-device button:hover {
+  background: rgba(47, 125, 90, 0.12);
+}
+
 .icon-button {
   display: inline-grid;
   width: 40px;
@@ -787,6 +834,19 @@ tbody tr:last-child td {
     min-width: 0;
   }
 
+  .remember-device {
+    font-size: 0.72rem;
+  }
+
+  .trusted-device {
+    min-width: 0;
+  }
+
+  .trusted-device span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .main-nav {
     top: 61px;
     left: 8px;
@@ -944,48 +1004,7 @@ tbody tr:last-child td {
   }
 
   h1 {
-    font-size: 1.85rem;
-    line-height: 1.04;
-  }
-
-  .team-line {
-    grid-template-columns: minmax(0, 1fr) 2ch;
-    gap: 8px;
-    padding: 8px;
-  }
-
-  .leaderboard li {
-    grid-template-columns: auto minmax(0, 1fr);
-    row-gap: 3px;
-  }
-
-  .leaderboard li > span:not(.rank-number),
-  .leaderboard li > small {
-    grid-column: 2;
-  }
-
-  .tabs {
-    gap: 6px;
-  }
-
-  .tab {
-    flex-basis: 100%;
-  }
-
-  .table-wrap {
-    margin: 0 -10px;
-    width: calc(100% + 20px);
-    padding: 0 10px;
-  }
-
-  table {
-    min-width: 560px;
-    font-size: 0.92rem;
-  }
-
-  th,
-  td {
-    padding: 10px 7px;
+    font-size: 1.85ru÷Kh‘éì¶»§q«^t7px;
   }
 
   .action-cell .icon-button {
