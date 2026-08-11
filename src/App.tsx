@@ -470,7 +470,518 @@ function MatchForm({
           </label>
           <label>
             Team A Tore
-            <input min={0} type="number" value…5658 tokens truncated…atch.slots.find((slot) => slot.team === emptySlot.team && slot.role === emptySlot.role) ?? { ...emptySlot })
+            <input min={0} type="number" value={draft.teamAScore} onChange={(event) => setDraft({ ...draft, teamAScore: Number(event.target.value) })} />
+          </label>
+          <label>
+            Team B Tore
+            <input min={0} type="number" value={draft.teamBScore} onChange={(event) => setDraft({ ...draft, teamBScore: Number(event.target.value) })} />
+          </label>
+          <label>
+            Notiz
+            <input value={draft.note ?? ""} onChange={(event) => setDraft({ ...draft, note: event.target.value })} maxLength={120} />
+          </label>
+        </div>
+
+        <div className="teams-editor">
+          <TeamEditor title="Team A" team="A" draft={draft} players={players} onChange={updateSlot} />
+          <TeamEditor title="Team B" team="B" draft={draft} players={players} onChange={updateSlot} />
+        </div>
+
+        {errors.length > 0 ? (
+          <ul className="form-errors">
+            {errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="form-actions">
+          {editing ? (
+            <button className="secondary-button" type="button" onClick={onCancel}>
+              <X size={18} /> Abbrechen
+            </button>
+          ) : null}
+          <button className="primary-button" type="submit" disabled={busy || players.length < 4}>
+            <Save size={18} /> Speichern
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function TeamEditor({
+  title,
+  team,
+  draft,
+  players,
+  onChange
+}: {
+  title: string;
+  team: TeamKey;
+  draft: MatchInput;
+  players: Player[];
+  onChange: (team: TeamKey, role: Role, playerId: string) => void;
+}) {
+  return (
+    <fieldset className="team-editor">
+      <legend>{title}</legend>
+      <RoleSelect team={team} role="defense" label="Abwehr/Tor" draft={draft} players={players} onChange={onChange} />
+      <RoleSelect team={team} role="attack" label="Angriff" draft={draft} players={players} onChange={onChange} />
+    </fieldset>
+  );
+}
+
+function RoleSelect({
+  team,
+  role,
+  label,
+  draft,
+  players,
+  onChange
+}: {
+  team: TeamKey;
+  role: Role;
+  label: string;
+  draft: MatchInput;
+  players: Player[];
+  onChange: (team: TeamKey, role: Role, playerId: string) => void;
+}) {
+  const value = draft.slots.find((slot) => slot.team === team && slot.role === role)?.playerId ?? "";
+  const selectedElsewhere = new Set(draft.slots.filter((slot) => !(slot.team === team && slot.role === role)).map((slot) => slot.playerId).filter(Boolean));
+
+  return (
+    <label>
+      {label}
+      <select value={value} onChange={(event) => onChange(team, role, event.target.value)}>
+        <option value="">Auswählen</option>
+        {players.map((player) => (
+          <option key={player.id} value={player.id} disabled={selectedElsewhere.has(player.id)}>
+            {player.displayName}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function RankingsPage({ rankings }: { rankings: ReturnType<typeof calculateRankings> }) {
+  const [tab, setTab] = useState<RankingTab>("overall");
+
+  const attack = [...rankings.players].sort((left, right) => right.attackRating - left.attackRating);
+  const defense = [...rankings.players].sort((left, right) => right.defenseRating - left.defenseRating);
+
+  return (
+    <div className="page-grid">
+      <PageHeader icon={Trophy} eyebrow="Rankings" title="Spieler, Rollen und feste Teams." />
+      <div className="tabs" role="tablist" aria-label="Ranking Ansicht">
+        <TabButton active={tab === "overall"} onClick={() => setTab("overall")} icon={Medal} label="Gesamt" />
+        <TabButton active={tab === "attack"} onClick={() => setTab("attack")} icon={Goal} label="Angriff" />
+        <TabButton active={tab === "defense"} onClick={() => setTab("defense")} icon={Shield} label="Abwehr" />
+        <TabButton active={tab === "teams"} onClick={() => setTab("teams")} icon={Swords} label="Teams" />
+      </div>
+
+      <section className="panel">
+        {tab === "overall" ? <PlayerRankingTable standings={rankings.players} mode="overall" /> : null}
+        {tab === "attack" ? <PlayerRankingTable standings={attack} mode="attack" /> : null}
+        {tab === "defense" ? <PlayerRankingTable standings={defense} mode="defense" /> : null}
+        {tab === "teams" ? <TeamRankingTable teams={rankings.teams} /> : null}
+      </section>
+    </div>
+  );
+}
+
+function StatsPage({
+  rankings,
+  matches,
+  playersById
+}: {
+  rankings: ReturnType<typeof calculateRankings>;
+  matches: MatchRecord[];
+  playersById: Map<string, Player>;
+}) {
+  const withGames = rankings.players.filter((standing) => standing.games > 0);
+  const winRate = [...withGames].sort((left, right) => winRateValue(right) - winRateValue(left) || right.games - left.games).slice(0, 8);
+  const mostGames = [...withGames].sort((left, right) => right.games - left.games).slice(0, 8);
+  const form = [...withGames].sort((left, right) => formScore(right.lastResults) - formScore(left.lastResults)).slice(0, 8);
+  const offense = [...withGames].sort((left, right) => right.attackGoalsFor - left.attackGoalsFor).slice(0, 8);
+  const defense = [...withGames]
+    .filter((standing) => standing.defenseGames > 0)
+    .sort((left, right) => defenseConcededAverage(left) - defenseConcededAverage(right))
+    .slice(0, 8);
+
+  return (
+    <div className="page-grid">
+      <PageHeader icon={BarChart3} eyebrow="Statistiken" title="Leaderboards jenseits vom Elo-Ranking." />
+      <section className="stats-grid">
+        <Leaderboard title="Beste Winrate" icon={Trophy} rows={winRate.map((standing) => [standing.player.displayName, formatPercent(winRateValue(standing)), `${standing.games} Spiele`])} />
+        <Leaderboard title="Formkurve" icon={Medal} rows={form.map((standing) => [standing.player.displayName, `${formScore(standing.lastResults).toFixed(1)} Punkte`, resultDots(standing.lastResults)])} />
+        <Leaderboard title="Meiste Spiele" icon={CalendarDays} rows={mostGames.map((standing) => [standing.player.displayName, `${standing.games}`, `${standing.wins} Siege`])} />
+        <Leaderboard title="Angriffs-Tore" icon={Goal} rows={offense.map((standing) => [standing.player.displayName, `${standing.attackGoalsFor}`, `${standing.attackGames}x Angriff`])} />
+        <Leaderboard title="Beste Abwehrquote" icon={Shield} rows={defense.map((standing) => [standing.player.displayName, defenseConcededAverage(standing).toFixed(1), `${standing.defenseGames}x Abwehr`])} />
+        <Leaderboard
+          title="Höchste Siege"
+          icon={Swords}
+          rows={rankings.biggestWins.map((match) => [formatMatchTeams(match, playersById), `${match.teamAScore}:${match.teamBScore}`, formatDate(match.playedAt)])}
+        />
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={CalendarDays} title="Alle Spiele" />
+        <MatchList matches={matches.filter((match) => !match.isDeleted)} playersById={playersById} />
+      </section>
+    </div>
+  );
+}
+
+function PlayersPage({
+  players,
+  busy,
+  onSave,
+  onDeactivate
+}: {
+  players: Player[];
+  busy: boolean;
+  onSave: (input: { id?: string; displayName: string; active?: boolean }) => Promise<boolean>;
+  onDeactivate: (player: Player) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState<Player | null>(null);
+  const [name, setName] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    setName(editing?.displayName ?? "");
+    setErrors([]);
+  }, [editing]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextErrors = validateDisplayName(name);
+    const duplicate = players.some((player) => player.id !== editing?.id && player.displayName.trim().toLowerCase() === name.trim().toLowerCase());
+    if (duplicate) {
+      nextErrors.push("Dieser Name existiert bereits.");
+    }
+    setErrors(nextErrors);
+
+    if (nextErrors.length === 0) {
+      const saved = await onSave({ id: editing?.id, displayName: name.trim(), active: editing?.active ?? true });
+      if (saved) {
+        setEditing(null);
+        setName("");
+      }
+    }
+  }
+
+  return (
+    <div className="page-grid">
+      <PageHeader icon={Users} eyebrow="Spieler" title="Roster verwalten." />
+      <section className="panel">
+        <PanelTitle icon={editing ? Edit3 : Plus} title={editing ? "Spieler bearbeiten" : "Spieler anlegen"} />
+        <form className="player-form" onSubmit={(event) => void submit(event)}>
+          <label>
+            Name
+            <input value={name} onChange={(event) => setName(event.target.value)} maxLength={40} />
+          </label>
+          <div className="form-actions">
+            {editing ? (
+              <button className="secondary-button" type="button" onClick={() => setEditing(null)}>
+                <X size={18} /> Abbrechen
+              </button>
+            ) : null}
+            <button className="primary-button" type="submit" disabled={busy}>
+              <Save size={18} /> Speichern
+            </button>
+          </div>
+        </form>
+        {errors.length > 0 ? (
+          <ul className="form-errors">
+            {errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={Users} title="Roster" />
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Seit</th>
+                <th className="align-right">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {players.map((player) => (
+                <tr key={player.id}>
+                  <td>{player.displayName}</td>
+                  <td>{player.active ? "Aktiv" : "Inaktiv"}</td>
+                  <td>{formatDate(player.createdAt)}</td>
+                  <td className="align-right action-cell">
+                    <button className="icon-button" type="button" onClick={() => setEditing(player)} aria-label={`${player.displayName} bearbeiten`}>
+                      <Edit3 size={17} />
+                    </button>
+                    {player.active ? (
+                      <button
+                        className="icon-button danger"
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`${player.displayName} deaktivieren? Historische Spiele bleiben erhalten.`)) {
+                            void onDeactivate(player);
+                          }
+                        }}
+                        aria-label={`${player.displayName} deaktivieren`}
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PlayerRankingTable({ standings, mode }: { standings: PlayerStanding[]; mode: "overall" | "attack" | "defense" }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Spieler</th>
+            <th>Rating</th>
+            <th>Spiele</th>
+            <th>Winrate</th>
+            <th>Tore</th>
+            <th>Form</th>
+          </tr>
+        </thead>
+        <tbody>
+          {standings.map((standing, index) => {
+            const rating = mode === "attack" ? standing.attackRating : mode === "defense" ? standing.defenseRating : standing.overallRating;
+            const roleGames = mode === "attack" ? standing.attackGames : mode === "defense" ? standing.defenseGames : standing.games;
+            return (
+              <tr key={standing.player.id}>
+                <td>{index + 1}</td>
+                <td>
+                  <strong>{standing.player.displayName}</strong>
+                  {standing.games < 10 ? <span className="muted-inline">provisorisch</span> : null}
+                </td>
+                <td>{formatRating(rating)}</td>
+                <td>{roleGames}</td>
+                <td>{formatPercent(winRateValue(standing))}</td>
+                <td>{standing.goalsFor}:{standing.goalsAgainst}</td>
+                <td>{resultDots(standing.lastResults)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TeamRankingTable({ teams }: { teams: TeamStanding[] }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Team</th>
+            <th>Rating</th>
+            <th>Spiele</th>
+            <th>Winrate</th>
+            <th>Torverhältnis</th>
+            <th>Form</th>
+          </tr>
+        </thead>
+        <tbody>
+          {teams.map((team, index) => (
+            <tr key={team.key}>
+              <td>{index + 1}</td>
+              <td>
+                <strong>{team.defensePlayer.displayName}</strong>
+                <span className="role-pill">Abwehr</span>
+                <strong>{team.attackPlayer.displayName}</strong>
+                <span className="role-pill attack">Angriff</span>
+              </td>
+              <td>{formatRating(team.rating)}</td>
+              <td>{team.games}</td>
+              <td>{formatPercent(team.games ? team.wins / team.games : 0)}</td>
+              <td>{team.goalsFor}:{team.goalsAgainst}</td>
+              <td>{resultDots(team.lastResults)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StandingList({ standings, showForm = false }: { standings: PlayerStanding[]; showForm?: boolean }) {
+  if (standings.length === 0) {
+    return <EmptyState text="Noch keine Wertung vorhanden." />;
+  }
+
+  return (
+    <ol className="standing-list">
+      {standings.map((standing) => (
+        <li key={standing.player.id}>
+          <span>
+            <strong>{standing.player.displayName}</strong>
+            <small>{standing.games} Spiele · {formatPercent(winRateValue(standing))}</small>
+          </span>
+          <span className="list-score">{showForm ? resultDots(standing.lastResults) : formatRating(standing.overallRating)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function MatchList({ matches, playersById, compact = false }: { matches: MatchRecord[]; playersById: Map<string, Player>; compact?: boolean }) {
+  const visible = [...matches]
+    .filter((match) => !match.isDeleted)
+    .sort((left, right) => new Date(right.playedAt).getTime() - new Date(left.playedAt).getTime());
+
+  if (visible.length === 0) {
+    return <EmptyState text="Noch keine Spiele vorhanden." />;
+  }
+
+  return (
+    <div className={compact ? "match-list compact" : "match-list"}>
+      {visible.map((match) => (
+        <MatchSummary key={match.id} match={match} playersById={playersById} />
+      ))}
+    </div>
+  );
+}
+
+function MatchSummary({ match, playersById }: { match: MatchRecord; playersById: Map<string, Player> }) {
+  const teamA = teamLabel(match, "A", playersById);
+  const teamB = teamLabel(match, "B", playersById);
+  const winner = match.teamAScore === match.teamBScore ? "draw" : match.teamAScore > match.teamBScore ? "A" : "B";
+
+  return (
+    <div className="match-summary">
+      <div>
+        <time>{formatDate(match.playedAt)}</time>
+        {match.note ? <small>{match.note}</small> : null}
+      </div>
+      <div className={winner === "A" ? "team-line winner" : "team-line"}>
+        <span>{teamA}</span>
+        <strong>{match.teamAScore}</strong>
+      </div>
+      <div className={winner === "B" ? "team-line winner" : "team-line"}>
+        <span>{teamB}</span>
+        <strong>{match.teamBScore}</strong>
+      </div>
+    </div>
+  );
+}
+
+function Leaderboard({ title, icon: Icon, rows }: { title: string; icon: typeof Trophy; rows: string[][] }) {
+  return (
+    <section className="panel">
+      <PanelTitle icon={Icon} title={title} />
+      {rows.length === 0 ? (
+        <EmptyState text="Noch keine Daten." />
+      ) : (
+        <ol className="leaderboard">
+          {rows.map((row, index) => (
+            <li key={`${title}-${row.join("-")}`}>
+              <span className="rank-number">{index + 1}</span>
+              <strong>{row[0]}</strong>
+              <span>{row[1]}</span>
+              <small>{row[2]}</small>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function Metric({ icon: Icon, label, value, detail }: { icon: typeof Trophy; label: string; value: string; detail: string }) {
+  return (
+    <article className="metric-card">
+      <Icon size={20} />
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function PageHeader({ icon: Icon, eyebrow, title }: { icon: typeof Trophy; eyebrow: string; title: string }) {
+  return (
+    <section className="page-header">
+      <Icon size={22} />
+      <div>
+        <span className="eyebrow">{eyebrow}</span>
+        <h1>{title}</h1>
+      </div>
+    </section>
+  );
+}
+
+function PanelTitle({ icon: Icon, title }: { icon: typeof Trophy; title: string }) {
+  return (
+    <div className="panel-title">
+      <Icon size={19} />
+      <h2>{title}</h2>
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: typeof Trophy; label: string }) {
+  return (
+    <button className={active ? "tab active" : "tab"} type="button" onClick={onClick}>
+      <Icon size={17} />
+      {label}
+    </button>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <p className="empty-state">{text}</p>;
+}
+
+function LoadingState() {
+  return (
+    <div className="loading-state">
+      <RefreshCw size={24} />
+      <span>Lade Ranking...</span>
+    </div>
+  );
+}
+
+function toMatchDraft(match: MatchRecord | null): MatchInput {
+  if (!match) {
+    return {
+      playedAt: toDateTimeLocalValue(new Date().toISOString()),
+      teamAScore: 10,
+      teamBScore: 0,
+      note: "",
+      slots: emptySlots.map((slot) => ({ ...slot }))
+    };
+  }
+
+  return {
+    id: match.id,
+    playedAt: toDateTimeLocalValue(match.playedAt),
+    teamAScore: match.teamAScore,
+    teamBScore: match.teamBScore,
+    note: match.note ?? "",
+    slots: emptySlots.map((emptySlot) => match.slots.find((slot) => slot.team === emptySlot.team && slot.role === emptySlot.role) ?? { ...emptySlot })
   };
 }
 
