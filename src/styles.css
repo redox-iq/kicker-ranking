@@ -1004,7 +1004,48 @@ tbody tr:last-child td {
   }
 
   h1 {
-    font-size: 1.85ru÷Kh‘éì¶»§q«^t7px;
+    font-size: 1.85rem;
+    line-height: 1.04;
+  }
+
+  .team-line {
+    grid-template-columns: minmax(0, 1fr) 2ch;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .leaderboard li {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 3px;
+  }
+
+  .leaderboard li > span:not(.rank-number),
+  .leaderboard li > small {
+    grid-column: 2;
+  }
+
+  .tabs {
+    gap: 6px;
+  }
+
+  .tab {
+    flex-basis: 100%;
+  }
+
+  .table-wrap {
+    margin: 0 -10px;
+    width: calc(100% + 20px);
+    padding: 0 10px;
+  }
+
+  table {
+    min-width: 560px;
+    font-size: 0.92rem;
+  }
+
+  th,
+  td {
+    padding: 10px 7px;
   }
 
   .action-cell .icon-button {
