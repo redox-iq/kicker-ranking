@@ -85,6 +85,7 @@ export default function App() {
       return;
     }
 
+    setConnectionStatus("checking");
     try {
       await repository.checkConnection();
       setConnectionStatus("live");
@@ -98,28 +99,13 @@ export default function App() {
   }, [reload]);
 
   useEffect(() => {
-    if (repository.source !== "supabase") {
-      return;
-    }
-
-    const onOffline = () => setConnectionStatus("offline");
-    const onOnline = () => void checkConnection();
-    const intervalId = window.setInterval(() => void checkConnection(), 30_000);
-
-    window.addEventListener("offline", onOffline);
-    window.addEventListener("online", onOnline);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("offline", onOffline);
-      window.removeEventListener("online", onOnline);
+    const onPopState = () => {
+      setPath(readRoute());
+      void checkConnection();
     };
-  }, [checkConnection]);
-
-  useEffect(() => {
-    const onPopState = () => setPath(readRoute());
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [checkConnection]);
 
   useEffect(() => {
     window.sessionStorage.setItem("kicker-group-code", groupCode);
@@ -130,8 +116,12 @@ export default function App() {
   const playersById = useMemo(() => new Map(data.players.map((player) => [player.id, player])), [data.players]);
 
   function navigate(nextPath: RoutePath) {
+    const routeChanged = nextPath !== path;
     window.history.pushState({}, "", `${basePath}${nextPath}`);
     setPath(nextPath);
+    if (routeChanged) {
+      void checkConnection();
+    }
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
