@@ -24,16 +24,24 @@ import { repository } from "./lib/repository";
 import { validateDisplayName, validateMatchInput } from "./lib/validation";
 import type { KickerData, MatchInput, MatchRecord, MatchResult, MatchSlot, Player, PlayerStanding, Role, TeamKey, TeamStanding } from "./types";
 
-type RoutePath = "/" | "/matches" | "/rankings" | "/stats" | "/players";
+type RoutePath = "/" | "/matches.html" | "/rankings.html" | "/stats.html" | "/players.html";
 type RankingTab = "overall" | "attack" | "defense" | "teams";
+type ConnectionStatus = "checking" | "live" | "offline";
 
 const routes: Array<{ path: RoutePath; label: string; icon: typeof Home }> = [
   { path: "/", label: "Übersicht", icon: Home },
-  { path: "/matches", label: "Spiele", icon: ListPlus },
-  { path: "/rankings", label: "Rankings", icon: Trophy },
-  { path: "/stats", label: "Stats", icon: BarChart3 },
-  { path: "/players", label: "Spieler", icon: Users }
+  { path: "/matches.html", label: "Spiele", icon: ListPlus },
+  { path: "/rankings.html", label: "Rankings", icon: Trophy },
+  { path: "/stats.html", label: "Stats", icon: BarChart3 },
+  { path: "/players.html", label: "Spieler", icon: Users }
 ];
+
+const legacyRoutes: Record<string, RoutePath> = {
+  "/matches": "/matches.html",
+  "/rankings": "/rankings.html",
+  "/stats": "/stats.html",
+  "/players": "/players.html"
+};
 
 const basePath = new URL(import.meta.env.BASE_URL, window.location.origin).pathname.replace(/\/$/, "");
 
@@ -50,24 +58,62 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(repository.source === "supabase" ? "checking" : "offline");
   const [groupCode, setGroupCode] = useState(() => window.sessionStorage.getItem("kicker-group-code") ?? "");
   const [menuOpen, setMenuOpen] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
+    if (repository.source === "supabase") {
+      setConnectionStatus("checking");
+    }
     try {
       setData(await repository.load());
+      setConnectionStatus(repository.source === "supabase" ? "live" : "offline");
     } catch (err) {
+      setConnectionStatus("offline");
       setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const checkConnection = useCallback(async () => {
+    if (repository.source !== "supabase") {
+      setConnectionStatus("offline");
+      return;
+    }
+
+    try {
+      await repository.checkConnection();
+      setConnectionStatus("live");
+    } catch {
+      setConnectionStatus("offline");
+    }
+  }, []);
+
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (repository.source !== "supabase") {
+      return;
+    }
+
+    const onOffline = () => setConnectionStatus("offline");
+    const onOnline = () => void checkConnection();
+    const intervalId = window.setInterval(() => void checkConnection(), 30_000);
+
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [checkConnection]);
 
   useEffect(() => {
     const onPopState = () => setPath(readRoute());
@@ -103,6 +149,7 @@ export default function App() {
       await reload();
     } catch (err) {
       setError(errorMessage(err));
+      await checkConnection();
     } finally {
       setBusy(false);
     }
@@ -136,7 +183,9 @@ export default function App() {
         </nav>
 
         <div className="access-panel">
-          <span className={repository.source === "supabase" ? "source-badge live" : "source-badge"}>{repository.source === "supabase" ? "Live" : "Demo"}</span>
+          <span className={`source-badge ${connectionStatus}`} role="status" aria-live="polite">
+            {connectionStatus === "checking" ? "Prüfe…" : connectionStatus === "live" ? "Live" : "Offline"}
+          </span>
           <label className="code-input">
             <KeyRound size={16} />
             <input value={groupCode} onChange={(event) => setGroupCode(event.target.value)} type="password" placeholder="Gruppen-Code" aria-label="Gruppen-Code" />
@@ -154,7 +203,7 @@ export default function App() {
         ) : (
           <>
             {path === "/" ? <Dashboard data={data} rankings={rankings} playersById={playersById} navigate={navigate} /> : null}
-            {path === "/matches" ? (
+            {path === "/matches.html" ? (
               <MatchesPage
                 players={activePlayers}
                 matches={data.matches}
@@ -165,9 +214,9 @@ export default function App() {
                 onDelete={(matchId) => mutate(() => repository.deleteMatch(matchId, groupCode))}
               />
             ) : null}
-            {path === "/rankings" ? <RankingsPage rankings={rankings} /> : null}
-            {path === "/stats" ? <StatsPage rankings={rankings} matches={data.matches} playersById={playersById} /> : null}
-            {path === "/players" ? (
+            {path === "/rankings.html" ? <RankingsPage rankings={rankings} /> : null}
+            {path === "/stats.html" ? <StatsPage rankings={rankings} matches={data.matches} playersById={playersById} /> : null}
+            {path === "/players.html" ? (
               <PlayersPage
                 players={data.players}
                 busy={busy}
@@ -208,10 +257,10 @@ function Dashboard({
           <span className="eyebrow">2v2 Tischkicker</span>
           <h1>Ranking, Rollen und Form auf einen Blick.</h1>
           <div className="hero-actions">
-            <button className="primary-button" type="button" onClick={() => navigate("/matches")}>
+            <button className="primary-button" type="button" onClick={() => navigate("/matches.html")}>
               <Plus size={18} /> Spiel eintragen
             </button>
-            <button className="secondary-button" type="button" onClick={() => navigate("/rankings")}>
+            <button className="secondary-button" type="button" onClick={() => navigate("/rankings.html")}>
               <Trophy size={18} /> Rankings
             </button>
           </div>
@@ -882,7 +931,12 @@ function toMatchDraft(match: MatchRecord | null): MatchInput {
 function readRoute(): RoutePath {
   const pathname = window.location.pathname;
   const withoutBase = basePath && pathname.startsWith(basePath) ? pathname.slice(basePath.length) || "/" : pathname;
-  const current = withoutBase as RoutePath;
+  const normalized = withoutBase.length > 1 ? withoutBase.replace(/\/$/, "") : withoutBase;
+  const legacyRoute = legacyRoutes[normalized];
+  if (legacyRoute) {
+    return legacyRoute;
+  }
+  const current = normalized as RoutePath;
   return routes.some((route) => route.path === current) ? current : "/";
 }
 
