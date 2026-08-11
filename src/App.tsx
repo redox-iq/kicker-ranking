@@ -64,7 +64,6 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(repository.source === "supabase" ? "checking" : "offline");
   const [groupCode, setGroupCode] = useState(() => window.sessionStorage.getItem("kicker-group-code") ?? "");
   const [trustedDevice, setTrustedDevice] = useState(() => readTrustedDevice(window.localStorage));
-  const [rememberDevice, setRememberDevice] = useState(repository.source === "supabase");
   const [menuOpen, setMenuOpen] = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(() => window.scrollY > 12);
 
@@ -151,7 +150,7 @@ export default function App() {
     try {
       let credential = trustedDevice?.token ?? enteredCode;
 
-      if (!trustedDevice && rememberDevice && repository.source === "supabase") {
+      if (!trustedDevice && repository.source === "supabase") {
         const registration = await repository.registerTrustedDevice(enteredCode);
         saveTrustedDevice(window.localStorage, registration);
         setTrustedDevice(registration);
@@ -238,18 +237,10 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <>
-              <label className="code-input">
-                <KeyRound size={16} />
-                <input value={groupCode} onChange={(event) => setGroupCode(event.target.value)} type="password" placeholder="Gruppen-Code" aria-label="Gruppen-Code" />
-              </label>
-              {repository.source === "supabase" ? (
-                <label className="remember-device" title="Nach der nächsten erfolgreichen Änderung bleibt dieses Gerät 30 Tage freigeschaltet.">
-                  <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
-                  <span>30 Tage merken</span>
-                </label>
-              ) : null}
-            </>
+            <label className="code-input">
+              <KeyRound size={16} />
+              <input value={groupCode} onChange={(event) => setGroupCode(event.target.value)} type="password" placeholder="Gruppen-Code" aria-label="Gruppen-Code" />
+            </label>
           )}
           <button className="icon-button access-action refresh-button" type="button" onClick={() => void reload()} aria-label="Daten neu laden" disabled={loading || busy}>
             <RefreshCw size={18} />
@@ -283,11 +274,8 @@ export default function App() {
                 playersById={playersById}
                 busy={busy}
                 groupCode={groupCode}
-                rememberDevice={rememberDevice}
                 showAccessPrompt={!trustedDevice}
-                supportsRememberDevice={repository.source === "supabase"}
                 onGroupCodeChange={setGroupCode}
-                onRememberDeviceChange={setRememberDevice}
                 onSave={(input) => mutate((credential) => repository.upsertMatch(input, credential))}
                 onDelete={(matchId) => mutate((credential) => repository.deleteMatch(matchId, credential))}
               />
@@ -379,11 +367,8 @@ function MatchesPage({
   playersById,
   busy,
   groupCode,
-  rememberDevice,
   showAccessPrompt,
-  supportsRememberDevice,
   onGroupCodeChange,
-  onRememberDeviceChange,
   onSave,
   onDelete
 }: {
@@ -393,11 +378,8 @@ function MatchesPage({
   playersById: Map<string, Player>;
   busy: boolean;
   groupCode: string;
-  rememberDevice: boolean;
   showAccessPrompt: boolean;
-  supportsRememberDevice: boolean;
   onGroupCodeChange: (value: string) => void;
-  onRememberDeviceChange: (value: boolean) => void;
   onSave: (input: MatchInput) => Promise<boolean>;
   onDelete: (matchId: string) => Promise<boolean>;
 }) {
@@ -427,12 +409,6 @@ function MatchesPage({
             <KeyRound size={16} />
             <input value={groupCode} onChange={(event) => onGroupCodeChange(event.target.value)} type="password" placeholder="Gruppen-Code" aria-label="Gruppen-Code für Spiele" />
           </label>
-          {supportsRememberDevice ? (
-            <label className="remember-device">
-              <input type="checkbox" checked={rememberDevice} onChange={(event) => onRememberDeviceChange(event.target.checked)} />
-              <span>30 Tage merken</span>
-            </label>
-          ) : null}
         </section>
       ) : null}
       <MatchForm key={editing?.id ?? "new-match"} players={players} editing={editing} busy={busy} onSave={onSave} onCancel={() => setEditing(null)} />

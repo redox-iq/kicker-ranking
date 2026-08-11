@@ -196,23 +196,6 @@ button:disabled {
   color: var(--ink);
 }
 
-.remember-device {
-  display: inline-flex;
-  min-height: 40px;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.remember-device input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--green);
-}
-
 .match-access-panel {
   display: flex;
   flex-wrap: wrap;
@@ -900,10 +883,6 @@ tbody tr:last-child td {
 
   .code-input {
     min-width: 0;
-  }
-
-  .remember-device {
-    font-size: 0.72rem;
   }
 
   .match-access-panel {
