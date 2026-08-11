@@ -141,16 +141,24 @@ button:disabled {
 
 .source-badge {
   border-radius: 999px;
-  background: #efe6d0;
-  color: #775a16;
   padding: 6px 10px;
   font-size: 0.8rem;
   font-weight: 700;
 }
 
+.source-badge.checking {
+  background: #e8e9e7;
+  color: #555b56;
+}
+
 .source-badge.live {
   background: #dcefe4;
   color: var(--green-dark);
+}
+
+.source-badge.offline {
+  background: #f8dddd;
+  color: #a42626;
 }
 
 .code-input {
