@@ -7,7 +7,11 @@ const isGitHubPages =
 export default defineConfig({
   plugins: [react()],
   base: isGitHubPages ? "/kicker-ranking/" : "/",
-  build: {},
+  build: {
+    rollupOptions: {
+      input: ["index.html", "matches.html", "rankings.html", "stats.html", "players.html"]
+    }
+  },
   test: {
     environment: "node"
   }
