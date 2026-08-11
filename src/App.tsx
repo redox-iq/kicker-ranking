@@ -232,9 +232,10 @@ export default function App() {
           {trustedDevice ? (
             <div className="trusted-device">
               <ShieldCheck size={16} />
-              <span className="trusted-device-marquee">
-                <span className="trusted-device-label">Freigeschaltet bis {formatTrustedDeviceExpiry(trustedDevice.expiresAt)}</span>
-              </span>
+              <span className="trusted-device-label">Freigeschaltet bis {formatTrustedDeviceExpiry(trustedDevice.expiresAt)}</span>
+              <button className="trusted-device-logout" type="button" onClick={() => void forgetDevice()} disabled={busy} aria-label="Gerätefreigabe entfernen">
+                <LogOut size={16} />
+              </button>
             </div>
           ) : (
             <>
@@ -250,12 +251,18 @@ export default function App() {
               ) : null}
             </>
           )}
+          <button className="icon-button access-action refresh-button" type="button" onClick={() => void reload()} aria-label="Daten neu laden" disabled={loading || busy}>
+            <RefreshCw size={18} />
+          </button>
+        </div>
+
+        <div className="compact-actions">
           {trustedDevice ? (
-            <button className="icon-button access-action logout-button" type="button" onClick={() => void forgetDevice()} disabled={busy} aria-label="Gerätefreigabe entfernen">
+            <button className="icon-button access-action" type="button" onClick={() => void forgetDevice()} disabled={busy} aria-label="Gerätefreigabe entfernen">
               <LogOut size={18} />
             </button>
           ) : null}
-          <button className="icon-button access-action refresh-button" type="button" onClick={() => void reload()} aria-label="Daten neu laden" disabled={loading || busy}>
+          <button className="icon-button access-action" type="button" onClick={() => void reload()} aria-label="Daten neu laden" disabled={loading || busy}>
             <RefreshCw size={18} />
           </button>
         </div>

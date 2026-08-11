@@ -233,13 +233,28 @@ button:disabled {
   flex: 0 0 auto;
 }
 
-.trusted-device-marquee {
+.trusted-device-label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.trusted-device-label {
-  display: inline-block;
+.trusted-device-logout {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.compact-actions {
+  display: none;
 }
 
 .icon-button {
@@ -862,22 +877,8 @@ tbody tr:last-child td {
     min-width: 0;
   }
 
-  .trusted-device-marquee {
-    flex: 1 1 auto;
-  }
-
-  .trusted-device-label {
-    min-width: max-content;
-    padding-left: 100%;
-    animation: trusted-device-scroll 9s linear infinite;
-  }
-
   .access-action {
     flex: 0 0 auto;
-    transition:
-      top 180ms ease,
-      right 180ms ease,
-      transform 180ms ease;
   }
 
   .topbar.is-compact {
@@ -896,22 +897,17 @@ tbody tr:last-child td {
     height: 36px;
   }
 
-  .topbar.is-compact .trusted-device {
-    min-height: 34px;
+  .topbar.is-compact .access-panel {
+    display: none;
   }
 
-  .topbar.is-compact .access-action {
+  .topbar.is-compact .compact-actions {
     position: absolute;
     top: 9px;
-    z-index: 2;
-  }
-
-  .topbar.is-compact .logout-button {
-    right: 52px;
-  }
-
-  .topbar.is-compact .refresh-button {
     right: 8px;
+    z-index: 2;
+    display: flex;
+    gap: 8px;
   }
 
   .main-nav {
@@ -1022,15 +1018,8 @@ tbody tr:last-child td {
     padding-right: 94px;
   }
 
-  .topbar.is-compact .access-action {
+  .topbar.is-compact .compact-actions {
     top: 8px;
-  }
-
-  .topbar.is-compact .logout-button {
-    right: 50px;
-  }
-
-  .topbar.is-compact .refresh-button {
     right: 6px;
   }
 
@@ -1130,25 +1119,5 @@ tbody tr:last-child td {
   .action-cell .icon-button {
     width: 36px;
     height: 36px;
-  }
-}
-
-@keyframes trusted-device-scroll {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(-100%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .trusted-device-label {
-    max-width: 100%;
-    overflow: hidden;
-    padding-left: 0;
-    animation: none;
-    text-overflow: ellipsis;
   }
 }
